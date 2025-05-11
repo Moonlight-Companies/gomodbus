@@ -105,6 +105,25 @@ func (t *TCPTransport) Connect(ctx context.Context) error {
 
 	t.logger.Info(ctx, "Connecting to Modbus TCP server at %s:%d", t.host, t.port)
 
+	// Reset channels if we're reconnecting
+	select {
+	case <-t.done:
+		// done channel is closed, we need to recreate it
+		t.done = make(chan struct{})
+	default:
+		// done channel is still open, nothing to do
+	}
+
+	// Reset the transaction pool to ensure clean state during reconnection
+	t.transactionPool.transactionsMu.Lock()
+	t.transactionPool.unsafeReset()
+	t.transactionPool.transactionsMu.Unlock()
+
+	// Re-initialize write channel if needed
+	if t.writeChan == nil {
+		t.writeChan = make(chan *Transaction, 100)
+	}
+
 	// Get deadline from context or use default timeout
 	deadline, ok := ctx.Deadline()
 	if !ok {
@@ -133,6 +152,9 @@ func (t *TCPTransport) Connect(ctx context.Context) error {
 		t.writer = t.conn
 	}
 
+	// Reset the closeOnce for reconnection
+	t.closeOnce = sync.Once{}
+
 	t.connected = true
 
 	t.logger.Info(ctx, "Connected to Modbus TCP server at %s:%d", t.host, t.port)
@@ -155,21 +177,29 @@ func (t *TCPTransport) Disconnect(ctx context.Context) error {
 
 	t.logger.Info(ctx, "Disconnecting from Modbus TCP server")
 
+	// Mark as disconnected first to prevent new operations
+	t.connected = false
+
 	// Signal goroutines to exit
 	close(t.done)
 
+	// Give readLoop and writeLoop a moment to notice the done channel has been closed
+	// This helps prevent "use of closed network connection" errors
+	time.Sleep(10 * time.Millisecond)
+
 	var err error
 	t.closeOnce.Do(func() {
-		// Close the transaction pool first so pending transactions get cancelled
-		t.transactionPool.Close()
+		// Reset the transaction pool instead of closing it
+		// This will automatically cancel all pending transactions
+		t.transactionPool.transactionsMu.Lock()
+		t.transactionPool.unsafeReset()
+		t.transactionPool.transactionsMu.Unlock()
 
 		// Close the connection
 		if t.conn != nil {
 			err = t.conn.Close()
 		}
 	})
-
-	t.connected = false
 
 	t.logger.Info(ctx, "Disconnected from Modbus TCP server")
 	return err
@@ -182,6 +212,22 @@ func (t *TCPTransport) IsConnected() bool {
 	return t.connected
 }
 
+// ResetTransactions resets the transaction pool without disconnecting
+// This can be useful to recover from certain error states where the connection
+// is still valid but the transaction state may be corrupted
+func (t *TCPTransport) ResetTransactions(ctx context.Context) {
+	t.logger.Info(ctx, "Resetting transaction pool")
+
+	t.transactionPool.transactionsMu.Lock()
+	defer t.transactionPool.transactionsMu.Unlock()
+
+	// Use unsafeReset to completely reinitialize the transaction pool
+	// This will cancel all pending transactions, clear the map, and reset the freeIDs
+	t.transactionPool.unsafeReset()
+
+	t.logger.Info(ctx, "Transaction pool has been reset")
+}
+
 // readLoop continuously reads from the connection and handles responses
 func (t *TCPTransport) readLoop() {
 	ctx := context.Background()
@@ -192,18 +238,51 @@ func (t *TCPTransport) readLoop() {
 		t.setDisconnected(fmt.Errorf("read loop exited"))
 	}()
 
+	// Set a read deadline to ensure we don't block too long on read operations
+	// This allows us to check the done channel more frequently
+	readTimeout := 100 * time.Millisecond
+
 	for {
 		select {
 		case <-t.done:
 			return
 		default:
+			// Check if we're still connected
+			if !t.IsConnected() {
+				return
+			}
+
+			// Set a deadline for this read operation
+			if deadline, ok := t.conn.(interface{ SetReadDeadline(time.Time) error }); ok {
+				deadline.SetReadDeadline(time.Now().Add(readTimeout))
+			}
+
 			// Read the response header (7 bytes)
 			header := make([]byte, common.TCPHeaderLength)
 			_, err := io.ReadFull(t.reader, header)
 			if err != nil {
-				t.logger.Error(ctx, "Error reading header: %v", err)
-				t.setDisconnected(fmt.Errorf("read error: %w", err))
-				return
+				// Check if this is a timeout error (which is expected during shutdown)
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					// This is a timeout, check if we should exit
+					select {
+					case <-t.done:
+						return
+					default:
+						// Continue the loop and try again
+						continue
+					}
+				}
+
+				// If we're already disconnected or shutting down, just exit
+				select {
+				case <-t.done:
+					return
+				default:
+					// Otherwise, log and report the error
+					t.logger.Error(ctx, "Error reading header: %v", err)
+					t.setDisconnected(fmt.Errorf("read error: %w", err))
+					return
+				}
 			}
 
 			// If logger implements Hexdump and we're at trace level, log the header
@@ -239,10 +318,29 @@ func (t *TCPTransport) readLoop() {
 			body := make([]byte, bodyLength)
 			_, err = io.ReadFull(t.reader, body)
 			if err != nil {
-				t.logger.Error(ctx, "Error reading body: %v", err)
-				t.processError(transactionID, fmt.Errorf("read body error: %w", err))
-				t.setDisconnected(err)
-				return
+				// Check if this is a timeout or if we're shutting down
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					// This is a timeout, check if we should exit
+					select {
+					case <-t.done:
+						return
+					default:
+						// Otherwise continue
+						continue
+					}
+				}
+
+				// If we're shutting down, just exit
+				select {
+				case <-t.done:
+					return
+				default:
+					// Otherwise, log and report the error
+					t.logger.Error(ctx, "Error reading body: %v", err)
+					t.processError(transactionID, fmt.Errorf("read body error: %w", err))
+					t.setDisconnected(err)
+					return
+				}
 			}
 
 			// If logger implements Hexdump and we're at trace level, log the body
@@ -280,16 +378,36 @@ func (t *TCPTransport) writeLoop() {
 	}()
 
 	for {
+		// First check if we're still connected
+		if !t.IsConnected() {
+			return
+		}
+
 		select {
 		case <-t.done:
 			return
-		case tx := <-t.writeChan:
+		case tx, ok := <-t.writeChan:
+			// Check if the channel was closed
+			if !ok {
+				return
+			}
+
+			// Check if we're still connected
+			if !t.IsConnected() {
+				tx.Complete(nil, common.ErrNotConnected)
+				return
+			}
+
 			// Check if the transaction is still valid
 			select {
 			case <-tx.Context().Done():
 				t.logger.Debug(ctx, "Transaction %d was cancelled before writing",
 					tx.Request.GetTransactionID())
 				continue
+			case <-t.done:
+				// Transport is shutting down
+				tx.Complete(nil, common.ErrTransportClosing)
+				return
 			default:
 				// Transaction is still valid
 			}
@@ -310,13 +428,30 @@ func (t *TCPTransport) writeLoop() {
 				hexLogger.Hexdump(ctx, data)
 			}
 
+			// Check again if we should exit before writing
+			select {
+			case <-t.done:
+				tx.Complete(nil, common.ErrTransportClosing)
+				return
+			default:
+				// Continue with the write
+			}
+
 			// Write the request
 			_, err = t.writer.Write(data)
 			if err != nil {
-				t.logger.Error(ctx, "Error writing request: %v", err)
-				tx.Complete(nil, err)
-				t.setDisconnected(fmt.Errorf("write error: %w", err))
-				return
+				// If we're shutting down, don't report the error
+				select {
+				case <-t.done:
+					tx.Complete(nil, common.ErrTransportClosing)
+					return
+				default:
+					// Otherwise, log and report the error
+					t.logger.Error(ctx, "Error writing request: %v", err)
+					tx.Complete(nil, err)
+					t.setDisconnected(fmt.Errorf("write error: %w", err))
+					return
+				}
 			}
 
 			t.logger.Debug(ctx, "Wrote request for transaction %d",
@@ -347,6 +482,11 @@ func (t *TCPTransport) setDisconnected(err error) {
 
 	if wasConnected {
 		t.logger.Error(ctx, "Transport disconnected: %v", err)
+
+		// Reset the transaction pool to clean state for next reconnection
+		t.transactionPool.transactionsMu.Lock()
+		t.transactionPool.unsafeReset() // This will cancel all transactions
+		t.transactionPool.transactionsMu.Unlock()
 	}
 }
 

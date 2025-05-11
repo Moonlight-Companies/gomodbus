@@ -78,18 +78,44 @@ func (tp *TransactionPool) Close() {
 	ctx := context.Background()
 	tp.logger.Info(ctx, "Closing transaction pool")
 
-	close(tp.done)
-	close(tp.freeIDs)
-
+	// Use a mutex to protect against concurrent Close calls
 	tp.transactionsMu.Lock()
 	defer tp.transactionsMu.Unlock()
 
+	// Check if done channel is already closed
+	select {
+	case <-tp.done:
+		// Already closed, don't close again
+	default:
+		close(tp.done)
+	}
+
+	// Check if freeIDs channel is already closed
+	// We can do this by trying to receive from it in a non-blocking way
+	select {
+	case _, ok := <-tp.freeIDs:
+		if ok {
+			// Channel is still open, close it
+			close(tp.freeIDs)
+		}
+	default:
+		// Try closing it anyway, but recover from panic if it's already closed
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// Channel was already closed, ignore the panic
+				}
+			}()
+			close(tp.freeIDs)
+		}()
+	}
+
+	// Cancel all pending transactions
 	for txID, t := range tp.transactions {
 		tp.logger.Debug(ctx, "Cancelling transaction %d", txID)
 		if t != nil {
 			t.Cancel(common.ErrTransportClosing)
-
-			tp.unsafeRelease(txID)
+			delete(tp.transactions, txID)
 		}
 	}
 }
@@ -191,5 +217,44 @@ func (tp *TransactionPool) Release(txID common.TransactionID) (result *Transacti
 func (tp *TransactionPool) unsafeRelease(txID common.TransactionID) {
 	// Caller must hold mu
 	delete(tp.transactions, txID)
-	tp.freeIDs <- txID
+
+	// Only send to freeIDs if the channel is still open
+	// This prevents panics during shutdown
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				// Channel was closed, ignore the panic
+			}
+		}()
+
+		// Use non-blocking send with a select to avoid deadlocks
+		select {
+		case tp.freeIDs <- txID:
+			// Successfully sent ID back to pool
+		default:
+			// Channel is full or closed, just drop the ID
+		}
+	}()
+}
+
+func (tp *TransactionPool) unsafeReset() {
+	// Caller must hold mu
+	ctx := context.Background()
+
+	// Cancel all transactions with a consistent error message
+	for txID, tx := range tp.transactions {
+		if tx != nil {
+			tp.logger.Debug(ctx, "Cancelling transaction %d during reset", txID)
+			tx.Cancel(common.ErrTransportClosing)
+		}
+	}
+
+	// Create fresh transaction map and freeIDs channel
+	tp.transactions = make(map[common.TransactionID]*Transaction)
+	tp.freeIDs = make(chan common.TransactionID, MaxTransactions)
+
+	// Pre-populate the free IDs channel
+	for i := range MaxTransactions {
+		tp.freeIDs <- common.TransactionID(i)
+	}
 }
