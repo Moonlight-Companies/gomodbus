@@ -14,6 +14,8 @@ var (
 	ErrInvalidResponseLength = errors.New("invalid response length")
 	ErrInvalidCRC            = errors.New("invalid CRC")
 	ErrInvalidFunction       = errors.New("invalid function code")
+	ErrInvalidValue          = errors.New("invalid value")
+	ErrInvalidResponseFormat = errors.New("invalid response format")
 	ErrTimeout               = errors.New("timeout")
 	ErrContextCanceled       = errors.New("context canceled")
 	ErrInvalidProtocolHeader = errors.New("invalid protocol header")
@@ -44,6 +46,19 @@ func (e *ModbusError) Error() string {
 func IsModbusError(err error) bool {
 	_, ok := err.(*ModbusError)
 	return ok
+}
+
+// IsExceptionError checks if an error is a specific Modbus exception
+func IsExceptionError(err error, exceptionCode ExceptionCode) bool {
+	if modbusErr, ok := err.(*ModbusError); ok {
+		return modbusErr.ExceptionCode == exceptionCode
+	}
+	return false
+}
+
+// IsFunctionNotSupportedError checks if an error is due to a function not being supported
+func IsFunctionNotSupportedError(err error) bool {
+	return IsExceptionError(err, ExceptionFunctionCodeNotSupported)
 }
 
 // NewModbusError creates a new ModbusError

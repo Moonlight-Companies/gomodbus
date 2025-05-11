@@ -423,3 +423,144 @@ func (h *serverProtocolHandler) HandleReadWriteMultipleRegisters(ctx context.Con
 
 	return response, nil
 }
+
+// HandleReadDeviceIdentification processes a read device identification request
+func (h *serverProtocolHandler) HandleReadDeviceIdentification(ctx context.Context, req common.Request, store common.DataStore) (common.Response, error) {
+	// Parse request data
+	if len(req.GetPDU().Data) < 3 {
+		return nil, common.NewModbusError(req.GetPDU().FunctionCode, common.ExceptionInvalidDataValue)
+	}
+
+	// Data format:
+	// Byte 0: MEI Type (0x0E for ReadDeviceID)
+	// Byte 1: ReadDeviceID code (0x01-0x04)
+	// Byte 2: Object ID
+	if common.MEIType(req.GetPDU().Data[0]) != common.MEIReadDeviceID {
+		return nil, common.NewModbusError(req.GetPDU().FunctionCode, common.ExceptionInvalidDataValue)
+	}
+
+	readDeviceIDCode := common.ReadDeviceIDCode(req.GetPDU().Data[1])
+	objectID := common.DeviceIDObjectCode(req.GetPDU().Data[2])
+
+	// Create a response based on the request
+	// Fixed values for this example server
+	deviceID := &common.DeviceIdentification{
+		ReadDeviceIDCode: readDeviceIDCode,
+		ConformityLevel:  0x01, // Basic identification
+		MoreFollows:      false,
+		NextObjectID:     0x00,
+		NumberOfObjects:  0,
+		Objects:          make([]common.DeviceIDObject, 0),
+	}
+
+	// Default objects to include (all basic identification objects)
+	objectsToInclude := []common.DeviceIDObjectCode{
+		common.DeviceIDVendorName,
+		common.DeviceIDProductCode,
+		common.DeviceIDMajorMinorRevision,
+	}
+
+	// Specific object handling
+	if readDeviceIDCode == common.ReadDeviceIDSpecificObject {
+		objectsToInclude = []common.DeviceIDObjectCode{objectID}
+	} else if readDeviceIDCode == common.ReadDeviceIDRegularStream {
+		// Include regular objects too
+		objectsToInclude = append(objectsToInclude,
+			common.DeviceIDVendorURL,
+			common.DeviceIDProductName,
+			common.DeviceIDModelName,
+			common.DeviceIDUserAppName,
+		)
+	} else if readDeviceIDCode == common.ReadDeviceIDExtendedStream {
+		// Include all objects (basic + regular + extended)
+		objectsToInclude = append(objectsToInclude,
+			common.DeviceIDVendorURL,
+			common.DeviceIDProductName,
+			common.DeviceIDModelName,
+			common.DeviceIDUserAppName,
+			// Add any extended objects here (0x80-0xFF)
+			common.DeviceIDObjectCode(0x80), // Example extended object
+		)
+	}
+
+	// Fixed object values for this server
+	objectValues := map[common.DeviceIDObjectCode]string{
+		// Basic identification objects (mandatory)
+		common.DeviceIDVendorName:         "GoModbus",
+		common.DeviceIDProductCode:        "GM-001",
+		common.DeviceIDMajorMinorRevision: "1.0",
+
+		// Regular identification objects (optional)
+		common.DeviceIDVendorURL:          "https://github.com/Moonlight-Companies/gomodbus",
+		common.DeviceIDProductName:        "GoModbus Server",
+		common.DeviceIDModelName:          "Modbus TCP Server",
+		common.DeviceIDUserAppName:        "Example Server",
+
+		// Extended identification objects (vendor-specific)
+		common.DeviceIDObjectCode(0x80):   "Extended Object Example",
+	}
+
+	// Add objects to response
+	for _, id := range objectsToInclude {
+		value, exists := objectValues[id]
+		if exists {
+			deviceID.Objects = append(deviceID.Objects, common.DeviceIDObject{
+				ID:     id,
+				Length: byte(len(value)),
+				Value:  value,
+			})
+		}
+	}
+
+	deviceID.NumberOfObjects = byte(len(deviceID.Objects))
+
+	// Encode response
+	// Format:
+	// Byte 0: MEI Type (0x0E)
+	// Byte 1: ReadDeviceID code
+	// Byte 2: Conformity level
+	// Byte 3: More follows (0 or 1)
+	// Byte 4: Next object ID
+	// Byte 5: Number of objects
+	// For each object:
+	//   Byte n+0: Object ID
+	//   Byte n+1: Object length
+	//   Byte n+2..n+1+length: Object value
+
+	// Calculate response size
+	responseSize := 6 // Fixed header
+	for _, obj := range deviceID.Objects {
+		responseSize += 2 + int(obj.Length) // ID + length + value
+	}
+
+	responseData := make([]byte, responseSize)
+	responseData[0] = byte(common.MEIReadDeviceID)
+	responseData[1] = byte(deviceID.ReadDeviceIDCode)
+	responseData[2] = deviceID.ConformityLevel
+	if deviceID.MoreFollows {
+		responseData[3] = 1
+	} else {
+		responseData[3] = 0
+	}
+	responseData[4] = byte(deviceID.NextObjectID)
+	responseData[5] = deviceID.NumberOfObjects
+
+	// Add objects
+	offset := 6
+	for _, obj := range deviceID.Objects {
+		responseData[offset] = byte(obj.ID)
+		responseData[offset+1] = obj.Length
+		copy(responseData[offset+2:offset+2+int(obj.Length)], []byte(obj.Value))
+		offset += 2 + int(obj.Length)
+	}
+
+	// Create the response
+	response := transport.NewResponse(
+		req.GetTransactionID(),
+		req.GetUnitID(),
+		req.GetPDU().FunctionCode,
+		responseData,
+	)
+
+	return response, nil
+}

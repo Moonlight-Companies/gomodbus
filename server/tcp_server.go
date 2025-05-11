@@ -144,6 +144,11 @@ func (s *TCPServer) setupDefaultHandlers() {
 	s.SetHandler(common.FuncReadWriteMultipleRegisters, func(ctx context.Context, req common.Request) (common.Response, error) {
 		return s.protocol.HandleReadWriteMultipleRegisters(ctx, req, s.defaultStore)
 	})
+
+	// Read Device Identification (0x2B)
+	s.SetHandler(common.FuncReadDeviceIdentification, func(ctx context.Context, req common.Request) (common.Response, error) {
+		return s.protocol.HandleReadDeviceIdentification(ctx, req, s.defaultStore)
+	})
 }
 
 // SetHandler sets the handler for a specific Modbus function code

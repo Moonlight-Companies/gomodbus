@@ -35,6 +35,15 @@ type RegisterValue = uint16
 // InputRegisterValue alias represents an input register value
 type InputRegisterValue = uint16
 
+// ExceptionStatus represents the return value from ReadExceptionStatus
+type ExceptionStatus byte
+
+// ReadDeviceIDCode represents a device identification access type
+type ReadDeviceIDCode byte
+
+// DeviceIDObjectCode represents a device identification object code
+type DeviceIDObjectCode byte
+
 // Function codes as defined by the Modbus specification
 const (
 	// Standard function codes
@@ -48,6 +57,7 @@ const (
 	FuncWriteMultipleCoils         FunctionCode = 0x0F
 	FuncWriteMultipleRegisters     FunctionCode = 0x10
 	FuncReadWriteMultipleRegisters FunctionCode = 0x17
+	FuncReadDeviceIdentification   FunctionCode = 0x2B // MEI Transport
 
 	// Exception codes
 	ExceptionFunctionCodeNotSupported ExceptionCode = 0x01
@@ -59,6 +69,58 @@ const (
 	ExceptionMemoryParityError        ExceptionCode = 0x08
 	ExceptionGatewayPathUnavailable   ExceptionCode = 0x0A
 	ExceptionGatewayTargetNoResponse  ExceptionCode = 0x0B
+)
+
+// MEIType represents a Modbus Encapsulated Interface type
+// Used in function code 0x2B (Modbus Encapsulated Interface)
+// MEIType indicates which sub-function to execute
+type MEIType byte
+
+// MEI Types
+const (
+	// MEIReadDeviceID is the MEI type for reading device identification (0x0E)
+	MEIReadDeviceID MEIType = 0x0E
+
+	// Other MEI types from the specification could be added here:
+	// 0x0D - CANopen General Reference Request and Response PDU
+	// 0x0A - CUT File Access
+	// etc.
+)
+
+// Read Device ID codes
+const (
+	// ReadDeviceIDBasicStream requests basic device identification (stream access for objects 0x00-0x02)
+	ReadDeviceIDBasicStream ReadDeviceIDCode = 0x01
+	// ReadDeviceIDRegularStream requests regular device identification (stream access through UserApplicationName)
+	ReadDeviceIDRegularStream ReadDeviceIDCode = 0x02
+	// ReadDeviceIDExtendedStream requests extended device identification (stream access for all objects)
+	ReadDeviceIDExtendedStream ReadDeviceIDCode = 0x03
+	// ReadDeviceIDSpecificObject requests a specific identification object (individual access)
+	ReadDeviceIDSpecificObject ReadDeviceIDCode = 0x04
+
+	// Alias the old names for backwards compatibility
+	ReadDeviceIDBasic    = ReadDeviceIDBasicStream
+	ReadDeviceIDRegular  = ReadDeviceIDRegularStream
+	ReadDeviceIDExtended = ReadDeviceIDExtendedStream
+	ReadDeviceIDSpecific = ReadDeviceIDSpecificObject
+)
+
+// Device identification object IDs
+const (
+	// Basic identification objects (mandatory)
+	DeviceIDVendorName         DeviceIDObjectCode = 0x00 // VendorName - Mandatory basic object
+	DeviceIDProductCode        DeviceIDObjectCode = 0x01 // ProductCode - Mandatory basic object
+	DeviceIDMajorMinorRevision DeviceIDObjectCode = 0x02 // Revision - Mandatory basic object
+
+	// Regular identification objects (optional)
+	DeviceIDVendorURL   DeviceIDObjectCode = 0x03 // VendorURL - Standard regular object
+	DeviceIDProductName DeviceIDObjectCode = 0x04 // ProductName - Standard regular object
+	DeviceIDModelName   DeviceIDObjectCode = 0x05 // ModelName - Standard regular object
+	DeviceIDUserAppName DeviceIDObjectCode = 0x06 // UserApplicationName - Standard regular object
+
+	// Private objects (vendor-specific)
+	// Objects in the range 0x07-0x7F are reserved for future standard objects
+	// Objects in the range 0x80-0xFF are vendor-specific extended objects
 )
 
 // String returns the string representation of a FunctionCode
@@ -84,6 +146,8 @@ func (f FunctionCode) String() string {
 		return "WriteMultipleRegisters"
 	case FuncReadWriteMultipleRegisters:
 		return "ReadWriteMultipleRegisters"
+	case FuncReadDeviceIdentification:
+		return "ReadDeviceIdentification"
 	default:
 		// If it's an exception response
 		if IsException(byte(f)) {
@@ -119,6 +183,74 @@ func (e ExceptionCode) String() string {
 	}
 }
 
+// String returns the string representation of a MEIType
+func (m MEIType) String() string {
+	switch m {
+	case MEIReadDeviceID:
+		return "ReadDeviceIdentification"
+	default:
+		return fmt.Sprintf("UnknownMEIType(0x%02X)", byte(m))
+	}
+}
+
+// String returns the string representation of a ReadDeviceIDCode
+func (c ReadDeviceIDCode) String() string {
+	switch c {
+	case ReadDeviceIDBasicStream:
+		return "BasicStream"
+	case ReadDeviceIDRegularStream:
+		return "RegularStream"
+	case ReadDeviceIDExtendedStream:
+		return "ExtendedStream"
+	case ReadDeviceIDSpecificObject:
+		return "SpecificObject"
+	default:
+		return fmt.Sprintf("UnknownReadDeviceIDCode(0x%02X)", byte(c))
+	}
+}
+
+// String returns the string representation of a DeviceIDObjectCode
+func (c DeviceIDObjectCode) String() string {
+	switch c {
+	case DeviceIDVendorName:
+		return "VendorName"
+	case DeviceIDProductCode:
+		return "ProductCode"
+	case DeviceIDMajorMinorRevision:
+		return "MajorMinorRevision"
+	case DeviceIDVendorURL:
+		return "VendorURL"
+	case DeviceIDProductName:
+		return "ProductName"
+	case DeviceIDModelName:
+		return "ModelName"
+	case DeviceIDUserAppName:
+		return "UserApplicationName"
+	default:
+		if c >= 0x80 {
+			return fmt.Sprintf("ExtendedObject(0x%02X)", byte(c))
+		}
+		return fmt.Sprintf("UnknownObject(0x%02X)", byte(c))
+	}
+}
+
+// String returns a string representation of the ExceptionStatus
+func (s ExceptionStatus) String() string {
+	// Since ExceptionStatus is a bit field (8 coils), show which bits are set
+	var bits []int
+	for i := 0; i < 8; i++ {
+		if (s & (1 << i)) != 0 {
+			bits = append(bits, i)
+		}
+	}
+
+	if len(bits) == 0 {
+		return "ExceptionStatus(None)"
+	}
+
+	return fmt.Sprintf("ExceptionStatus(Bits: %v, Value: 0x%02X)", bits, byte(s))
+}
+
 // Protocol-specific constants
 const (
 	// Modbus TCP
@@ -143,7 +275,7 @@ const (
 )
 
 // TCPProtocolIdentifier is the standard identifier for Modbus TCP
-var TCPProtocolIdentifier = ProtocolID(0)
+const TCPProtocolIdentifier = ProtocolID(0)
 
 // ExceptionBit is the bit that is set in the function code to indicate an exception response
 const ExceptionBit byte = 0x80

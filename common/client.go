@@ -61,8 +61,19 @@ type Client interface {
 	ReadWriteMultipleRegisters(ctx context.Context, readAddress Address, readQuantity Quantity, writeAddress Address, writeValues []RegisterValue) ([]RegisterValue, error)
 
 	// ReadExceptionStatus reads the exception status from the server.
-	ReadExceptionStatus(ctx context.Context) (byte, error)
-	
+	// Returns the exception status as a typed value.
+	ReadExceptionStatus(ctx context.Context) (ExceptionStatus, error)
+
+	// ReadDeviceIdentification reads device identification data from the server.
+	// The readDeviceIDCode specifies which identification data to read:
+	//   - ReadDeviceIDBasic: Basic device identification (stream access)
+	//   - ReadDeviceIDRegular: Regular device identification (stream access)
+	//   - ReadDeviceIDExtended: Extended device identification (stream access)
+	//   - ReadDeviceIDSpecific: Specific identification object
+	// When using ReadDeviceIDSpecific, the objectID specifies which object to read.
+	// For other read device ID codes, objectID should be DeviceIDObjectCode(0).
+	ReadDeviceIdentification(ctx context.Context, readDeviceIDCode ReadDeviceIDCode, objectID DeviceIDObjectCode) (*DeviceIdentification, error)
+
 	// WithLogger sets the logger for the client.
 	WithLogger(logger LoggerInterface) Client
 }
@@ -166,8 +177,18 @@ type Protocol interface {
 
 	// ParseReadExceptionStatusResponse parses a response PDU data from a read exception status request.
 	// The data parameter contains the PDU data (excluding function code).
-	// Returns the exception status byte.
-	ParseReadExceptionStatusResponse(data []byte) (byte, error)
+	// Returns the exception status as a typed value.
+	ParseReadExceptionStatusResponse(data []byte) (ExceptionStatus, error)
+
+	// GenerateReadDeviceIdentificationRequest generates a request PDU data to read device identification.
+	// The returned byte slice contains only the PDU data (excluding function code).
+	// This is used to construct the full Modbus request.
+	GenerateReadDeviceIdentificationRequest(readDeviceIDCode ReadDeviceIDCode, objectID DeviceIDObjectCode) ([]byte, error)
+
+	// ParseReadDeviceIdentificationResponse parses a response PDU data from a read device identification request.
+	// The data parameter contains the PDU data (excluding function code).
+	// Returns the device identification data.
+	ParseReadDeviceIdentificationResponse(data []byte) (*DeviceIdentification, error)
 
 	// WithLogger sets the logger for the protocol and returns a new Protocol instance.
 	WithLogger(logger LoggerInterface) Protocol

@@ -463,15 +463,101 @@ func (h *ProtocolHandler) GenerateReadExceptionStatusRequest() ([]byte, error) {
 }
 
 // ParseReadExceptionStatusResponse parses a response to a read exception status request
-func (h *ProtocolHandler) ParseReadExceptionStatusResponse(data []byte) (byte, error) {
+func (h *ProtocolHandler) ParseReadExceptionStatusResponse(data []byte) (common.ExceptionStatus, error) {
 	ctx := context.Background()
 	h.logger.Debug(ctx, "Parsing read exception status response: data=%v", data)
 
 	if len(data) != 1 {
 		h.logger.Error(ctx, "Invalid response length for read exception status: expected 1, got %d", len(data))
-		return 0, common.ErrInvalidResponseLength
+		return common.ExceptionStatus(0), common.ErrInvalidResponseLength
 	}
 
-	h.logger.Debug(ctx, "Parsed read exception status response: status=%d", data[0])
-	return data[0], nil
+	status := common.ExceptionStatus(data[0])
+	h.logger.Debug(ctx, "Parsed read exception status response: status=%s", status)
+	return status, nil
+}
+
+// GenerateReadDeviceIdentificationRequest generates a request to read device identification
+func (h *ProtocolHandler) GenerateReadDeviceIdentificationRequest(readDeviceIDCode common.ReadDeviceIDCode, objectID common.DeviceIDObjectCode) ([]byte, error) {
+	ctx := context.Background()
+	h.logger.Debug(ctx, "Generating read device identification request: code=%d, objectID=%d", readDeviceIDCode, objectID)
+
+	// Validate read device ID code
+	if readDeviceIDCode < common.ReadDeviceIDBasic || readDeviceIDCode > common.ReadDeviceIDSpecific {
+		h.logger.Error(ctx, "Invalid read device ID code: %d", readDeviceIDCode)
+		return nil, common.ErrInvalidValue
+	}
+
+	// Data format:
+	// Byte 0: MEI Type (0x0E for ReadDeviceID)
+	// Byte 1: ReadDeviceID code (0x01-0x04)
+	// Byte 2: Object ID
+	data := []byte{byte(common.MEIReadDeviceID), byte(readDeviceIDCode), byte(objectID)}
+
+	h.logger.Debug(ctx, "Generated read device identification request data: %v", data)
+	return data, nil
+}
+
+// ParseReadDeviceIdentificationResponse parses a response from a read device identification request
+func (h *ProtocolHandler) ParseReadDeviceIdentificationResponse(data []byte) (*common.DeviceIdentification, error) {
+	ctx := context.Background()
+	h.logger.Debug(ctx, "Parsing read device identification response: %v", data)
+
+	// Check data length - minimum is 6 bytes (for a response with no objects)
+	// MEI Type (1) + ReadDeviceID code (1) + Conformity level (1) + More Follows (1) +
+	// Next Object ID (1) + Number of Objects (1)
+	if len(data) < 6 {
+		h.logger.Error(ctx, "Invalid response length for read device identification: %d", len(data))
+		return nil, common.ErrInvalidResponseLength
+	}
+
+	// Check MEI Type
+	if common.MEIType(data[0]) != common.MEIReadDeviceID {
+		h.logger.Error(ctx, "Invalid MEI type: 0x%02X, expected 0x%02X", data[0], common.MEIReadDeviceID)
+		return nil, common.ErrInvalidValue
+	}
+
+	result := &common.DeviceIdentification{
+		ReadDeviceIDCode: common.ReadDeviceIDCode(data[1]),
+		ConformityLevel:  data[2],
+		MoreFollows:      data[3] != 0,
+		NextObjectID:     common.DeviceIDObjectCode(data[4]),
+		NumberOfObjects:  data[5],
+		Objects:          make([]common.DeviceIDObject, 0, data[5]),
+	}
+
+	// Parse objects
+	offset := 6
+	for i := 0; i < int(data[5]); i++ {
+		// Check if we have enough data
+		if offset+2 > len(data) {
+			h.logger.Error(ctx, "Invalid response format for read device identification: not enough data for object header")
+			return nil, common.ErrInvalidResponseFormat
+		}
+
+		// Get object ID and length
+		objectID := common.DeviceIDObjectCode(data[offset])
+		objectLength := data[offset+1]
+		offset += 2
+
+		// Check if we have enough data for the object value
+		if offset+int(objectLength) > len(data) {
+			h.logger.Error(ctx, "Invalid response format for read device identification: not enough data for object value")
+			return nil, common.ErrInvalidResponseFormat
+		}
+
+		// Get object value (convert bytes to string)
+		objectValue := string(data[offset : offset+int(objectLength)])
+		offset += int(objectLength)
+
+		// Add object to result
+		result.Objects = append(result.Objects, common.DeviceIDObject{
+			ID:     objectID,
+			Length: objectLength,
+			Value:  objectValue,
+		})
+	}
+
+	h.logger.Debug(ctx, "Parsed read device identification response: %d objects", len(result.Objects))
+	return result, nil
 }

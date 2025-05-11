@@ -173,6 +173,48 @@ if err != nil {
 fmt.Println("Read values:", readValues)
 ```
 
+### Reading Device Identification
+
+```go
+// Read basic device identification (objects 0x00-0x02)
+ctx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
+defer cancel()
+
+deviceID, err := modbusClient.ReadDeviceIdentification(ctx, common.ReadDeviceIDBasicStream, common.DeviceIDObjectCode(0))
+if err != nil {
+    // Check if the error is because the device doesn't support this function
+    if common.IsFunctionNotSupportedError(err) {
+        fmt.Println("Device identification is not supported by this device")
+    } else {
+        fmt.Printf("Failed to read device identification: %v\n", err)
+    }
+    return
+}
+
+// Access basic device information (mandatory objects)
+fmt.Printf("Vendor Name: %s\n", deviceID.GetVendorName())
+fmt.Printf("Product Code: %s\n", deviceID.GetProductCode())
+fmt.Printf("Revision: %s\n", deviceID.GetRevision())
+
+// Read regular device identification (includes objects 0x00-0x06)
+regularID, err := modbusClient.ReadDeviceIdentification(ctx, common.ReadDeviceIDRegularStream, common.DeviceIDObjectCode(0))
+if err == nil {
+    fmt.Printf("Product Name: %s\n", regularID.GetProductName())
+    fmt.Printf("Model Name: %s\n", regularID.GetModelName())
+}
+
+// Read a specific object (vendor URL)
+specificID, err := modbusClient.ReadDeviceIdentification(ctx, common.ReadDeviceIDSpecificObject, common.DeviceIDVendorURL)
+if err != nil {
+    fmt.Printf("Failed to read vendor URL: %v\n", err)
+    return
+}
+
+if obj := specificID.GetObject(common.DeviceIDVendorURL); obj != nil {
+    fmt.Printf("Vendor URL: %s\n", obj.Value)
+}
+```
+
 ### Concurrent Operations
 
 The library supports concurrent operations from multiple goroutines:
@@ -328,6 +370,33 @@ defer cancel()
 values, err := client.ReadHoldingRegisters(ctx, common.Address(0), common.Quantity(10))
 ```
 
+### Error Handling
+
+The library provides helper functions for checking specific Modbus errors:
+
+```go
+// Execute a Modbus function
+result, err := client.ReadDeviceIdentification(ctx, common.ReadDeviceIDBasicStream, common.DeviceIDObjectCode(0))
+if err != nil {
+    // Check if the function is not supported
+    if common.IsFunctionNotSupportedError(err) {
+        fmt.Println("This device doesn't support device identification")
+    }
+
+    // Check for any specific exception
+    if common.IsExceptionError(err, common.ExceptionDataAddressNotAvailable) {
+        fmt.Println("The requested address is not available")
+    }
+
+    // Check if it's any kind of Modbus exception
+    if common.IsModbusError(err) {
+        fmt.Println("A Modbus exception occurred")
+    }
+
+    return
+}
+```
+
 ### Testing with Dynamic Ports
 
 The library provides a utility function to find a free port for testing:
@@ -363,6 +432,39 @@ client := client.NewTCPClient(
 - Write Multiple Coils (0x0F)
 - Write Multiple Registers (0x10)
 - Read/Write Multiple Registers (0x17)
+- Read Device Identification (0x2B / 0x0E)
+
+### Read Exception Status Example
+
+```go
+// Read the exception status from the device
+ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+defer cancel()
+
+status, err := modbusClient.ReadExceptionStatus(ctx)
+if err != nil {
+    fmt.Printf("Failed to read exception status: %v\n", err)
+    return
+}
+
+// The ExceptionStatus type provides useful string representation
+fmt.Printf("Exception Status: %s\n", status)
+
+// Check if specific bits are set
+if status&0x01 != 0 {
+    fmt.Println("Exception 0 is set")
+}
+if status&0x02 != 0 {
+    fmt.Println("Exception 1 is set")
+}
+
+// Status can also be used as a bit array
+for i := 0; i < 8; i++ {
+    if status&(1<<i) != 0 {
+        fmt.Printf("Exception bit %d is set\n", i)
+    }
+}
+```
 
 ## Type-Safe Design
 
@@ -383,6 +485,9 @@ type RegisterValue = uint16
 
 // InputRegisterValue alias represents an input register value
 type InputRegisterValue = uint16
+
+// ExceptionStatus represents the exception status returned by a device
+type ExceptionStatus byte
 ```
 
 This allows for more expressive and self-documenting code:

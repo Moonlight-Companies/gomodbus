@@ -387,29 +387,64 @@ func (c *BaseClient) ReadWriteMultipleRegisters(ctx context.Context, readAddress
 }
 
 // ReadExceptionStatus reads the exception status from the server.
-func (c *BaseClient) ReadExceptionStatus(ctx context.Context) (byte, error) {
+func (c *BaseClient) ReadExceptionStatus(ctx context.Context) (common.ExceptionStatus, error) {
 	c.logger.Info(ctx, "Reading exception status")
 
 	// Generate the request data
 	requestData, err := c.protocol.GenerateReadExceptionStatusRequest()
 	if err != nil {
 		c.logger.Error(ctx, "Error generating read exception status request: %v", err)
-		return 0, err
+		return common.ExceptionStatus(0), err
 	}
 
 	// Send the request
 	response, err := c.Send(ctx, common.FuncReadExceptionStatus, requestData)
 	if err != nil {
-		return 0, err
+		return common.ExceptionStatus(0), err
 	}
 
 	// Parse the response
 	status, err := c.protocol.ParseReadExceptionStatusResponse(response.GetPDU().Data)
 	if err != nil {
 		c.logger.Error(ctx, "Error parsing read exception status response: %v", err)
-		return 0, err
+		return common.ExceptionStatus(0), err
 	}
 
-	c.logger.Debug(ctx, "Read exception status successfully: %d", status)
+	c.logger.Debug(ctx, "Read exception status successfully: %s", status)
 	return status, nil
+}
+
+// ReadDeviceIdentification reads device identification data from the server.
+// The readDeviceIDCode specifies which identification data to read:
+//   - ReadDeviceIDBasic: Basic device identification (stream access)
+//   - ReadDeviceIDRegular: Regular device identification (stream access)
+//   - ReadDeviceIDExtended: Extended device identification (stream access)
+//   - ReadDeviceIDSpecific: Specific identification object
+// When using ReadDeviceIDSpecific, the objectID specifies which object to read.
+// For other read device ID codes, objectID should be DeviceIDObjectCode(0).
+func (c *BaseClient) ReadDeviceIdentification(ctx context.Context, readDeviceIDCode common.ReadDeviceIDCode, objectID common.DeviceIDObjectCode) (*common.DeviceIdentification, error) {
+	c.logger.Debug(ctx, "Reading device identification: code=%d, objectID=%d", readDeviceIDCode, objectID)
+
+	// Generate the request data
+	requestData, err := c.protocol.GenerateReadDeviceIdentificationRequest(readDeviceIDCode, objectID)
+	if err != nil {
+		c.logger.Error(ctx, "Error generating read device identification request: %v", err)
+		return nil, err
+	}
+
+	// Send the request
+	response, err := c.Send(ctx, common.FuncReadDeviceIdentification, requestData)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse the response
+	deviceID, err := c.protocol.ParseReadDeviceIdentificationResponse(response.GetPDU().Data)
+	if err != nil {
+		c.logger.Error(ctx, "Error parsing read device identification response: %v", err)
+		return nil, err
+	}
+
+	c.logger.Debug(ctx, "Read device identification successfully: %d objects", len(deviceID.Objects))
+	return deviceID, nil
 }
