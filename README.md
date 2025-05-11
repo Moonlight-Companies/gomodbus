@@ -4,16 +4,31 @@ A modern, thread-safe, and type-safe Modbus TCP client/server library for Go.
 
 ## Features
 
-- **Type-Safe**: Uses semantic type aliases for better code clarity and error prevention
-- **Thread-safe**: Multiple goroutines can use the same client/server instance concurrently
-- **Async operation**: Non-blocking I/O with proper context support for cancellation and timeouts
-- **Comprehensive**: Implements both client and server components of the Modbus TCP protocol
-- **Modular design**: Distinct packages for transport, protocol, client, and server components
-- **Customizable logging**: Pluggable logger interface allows integration with any logging framework
-- **Fluent configuration API**: Easy to use with functional options pattern for configuration
-- **Interface-based design**: Clean separation of concerns with well-defined interfaces
-- **Memory store implementation**: Built-in memory-based data store for quick server setup
-- **IO abstraction**: Uses standard Go io.Reader and io.Writer interfaces for flexibility and testability
+* **Modbus TCP Client & Server:** Robust implementations for both client and server functionalities.
+* **Wide Range of Functions:** Supports common Modbus functions:
+    * Read Coils (FC 0x01)
+    * Read Discrete Inputs (FC 0x02)
+    * Read Holding Registers (FC 0x03)
+    * Read Input Registers (FC 0x04)
+    * Write Single Coil (FC 0x05)
+    * Write Single Register (FC 0x06)
+    * Read Exception Status (FC 0x07) *(Client-side support)*
+    * Write Multiple Coils (FC 0x0F)
+    * Write Multiple Registers (FC 0x10)
+    * Read/Write Multiple Registers (FC 0x17)
+    * Read Device Identification (FC 0x2B, MEI Type 0x0E) *(Client-side support)*
+* **Context-Aware API:** Leverages `context.Context` for timeouts, deadlines, and request cancellation.
+* **Flexible Logging:**
+    * Configurable log levels (Trace, Debug, Info, Warn, Error, None).
+    * Support for custom `io.Writer` for log output (defaults to `os.Stdout`).
+    * Structured logging with custom fields.
+    * Optional PDU hexdumps (at Trace level) for in-depth debugging.
+    * Includes a `NoopLogger` to easily disable all logging output.
+* **Configurable Server:**
+    * Pluggable data store interface (`common.DataStore`) for custom server-side data handling (e.g., in-memory, database-backed).
+    * Includes a thread-safe `server.NewMemoryStore()` for quick server setup.
+* **User-Friendly API:** Designed to be idiomatic and easy to integrate into Go applications.
+
 
 ## Package Structure
 
@@ -38,46 +53,69 @@ go get github.com/Moonlight-Companies/gomodbus
 package main
 
 import (
-    "context"
-    "fmt"
-    "time"
+	"context"
+	"fmt"
+	"log"
+	"os"
+	"time"
 
-    "github.com/Moonlight-Companies/gomodbus/client"
-    "github.com/Moonlight-Companies/gomodbus/common"
-    "github.com/Moonlight-Companies/gomodbus/logging"
-    "github.com/Moonlight-Companies/gomodbus/transport"
+	"[github.com/Moonlight-Companies/gomodbus/client](https://github.com/Moonlight-Companies/gomodbus/client)"
+	"[github.com/Moonlight-Companies/gomodbus/common](https://github.com/Moonlight-Companies/gomodbus/common)"
+	"[github.com/Moonlight-Companies/gomodbus/logging](https://github.com/Moonlight-Companies/gomodbus/logging)"
+	"[github.com/Moonlight-Companies/gomodbus/transport](https://github.com/Moonlight-Companies/gomodbus/transport)"
 )
 
 func main() {
-    // Create a logger
-    logger := logging.NewLogger(
-        logging.WithLevel(common.LevelInfo),
-    )
+	// Optional: Initialize a logger.
+	// The default is a NoopLogger (no output). For output, create a logger:
+	logger := logging.NewLogger(
+		logging.WithLevel(common.LevelDebug), // Set desired log level
+		logging.WithWriter(os.Stdout),
+	)
 
-    // Create a client with custom options
-    modbusClient := client.NewTCPClient(
-        "localhost",
-        transport.WithPort(502),
-        transport.WithTimeoutOption(5*time.Second),
-        transport.WithTransportLogger(logger),
-    ).WithOptions(
-        client.WithTCPLogger(logger),
-        client.WithTCPUnitID(1),
-    )
+	// Create a new Modbus TCP client
+	// Replace "127.0.0.1" and port 5020 with your Modbus server's details.
+	modbusClient := client.NewTCPClient(
+		"127.0.0.1", // Server host
+		transport.WithPort(5020),
+		transport.WithTimeoutOption(5*time.Second),    // Connection & I/O timeout
+		transport.WithTransportLogger(logger),         // Attach logger to transport
+	).WithOptions(
+		client.WithTCPUnitID(1),      // Set the Modbus Unit ID (sometimes called Slave ID)
+		client.WithTCPLogger(logger), // Attach logger to client operations
+	)
 
-    // Connect to the server
-    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
+	// Create a context for the connection attempt
+	connectCtx, connectCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer connectCancel()
 
-    err := modbusClient.Connect(ctx)
-    if err != nil {
-        fmt.Printf("Failed to connect: %v\n", err)
-        return
-    }
-    defer modbusClient.Disconnect(context.Background())
+	// Connect to the server
+	if err := modbusClient.Connect(connectCtx); err != nil {
+		log.Fatalf("Failed to connect: %v", err)
+	}
+	defer modbusClient.Disconnect(context.Background()) // Disconnect when main function exits
 
-    // Now you can use the client for Modbus operations
-}
+	fmt.Println("Successfully connected to modbus server!")
+
+	// Example: Read Holding Registers
+	// Read 2 holding registers starting from address 100
+	readCtx, readCancel := context.WithTimeout(context.Background(), 2*time.Second) // Timeout for this specific operation
+	defer readCancel()
+	registers, err := modbusClient.ReadHoldingRegisters(readCtx, common.Address(100), common.Quantity(2))
+	if err != nil {
+		log.Fatalf("Failed to read holding registers: %v", err)
+	}
+	fmt.Printf("Read Holding Registers (Address 100, Quantity 2): %v\n", registers)
+
+	// Example: Write Single Coil
+	// Write true to coil at address 200
+	writeCtx, writeCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer writeCancel()
+	err = modbusClient.WriteSingleCoil(writeCtx, common.Address(200), true)
+	if err != nil {
+		log.Fatalf("Failed to write single coil: %v", err)
+	}
+	fmt.Println("Success")
 ```
 
 ### Reading Registers and Coils
