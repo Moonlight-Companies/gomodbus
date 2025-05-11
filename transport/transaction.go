@@ -8,13 +8,15 @@ import (
 )
 
 // Transaction represents an ongoing transaction with a request, response channel, and context
+// The Modbus TCP protocol uses a transaction ID to match requests and responses
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.1 (MBAP Header)
 type Transaction struct {
-	Request    common.Request
-	ResponseCh chan common.Response
-	ErrCh      chan error
-	ctx        context.Context
-	cancelFunc context.CancelFunc
-	createTime time.Time
+	Request    common.Request      // The Modbus request
+	ResponseCh chan common.Response // Channel for receiving the response
+	ErrCh      chan error          // Channel for receiving errors
+	ctx        context.Context     // Context for cancellation
+	cancelFunc context.CancelFunc  // Function to cancel the context
+	createTime time.Time           // Time when the transaction was created, used for timeout detection
 }
 
 // NewTransaction creates a new transaction with a given request and context

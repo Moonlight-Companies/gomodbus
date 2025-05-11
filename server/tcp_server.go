@@ -16,18 +16,30 @@ import (
 )
 
 // TCPServer implements a Modbus TCP server
+// Implements the Modbus TCP protocol as defined in the Modbus specification
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4 (Modbus Protocol Description)
+// Ref: Modbus_Messaging_Implementation_Guide_V1_0b.pdf, Section 3 (Modbus TCP/IP Protocol)
 type TCPServer struct {
+	// Server binding configuration
 	address      string
 	port         int
 	listener     net.Listener
+
+	// Function code handlers map
 	handlers     map[common.FunctionCode]common.HandlerFunc
+
+	// Data storage
 	defaultStore common.DataStore
+
+	// Server state
 	running      bool
 	clients      map[string]net.Conn
 	clientsMutex sync.RWMutex
 	mutex        sync.RWMutex
 	logger       common.LoggerInterface
 	stopChan     chan struct{}
+
+	// Protocol handler for processing requests
 	protocol     *serverProtocolHandler
 }
 
@@ -96,56 +108,68 @@ func (s *TCPServer) WithDataStore(dataStore common.DataStore) common.Server {
 }
 
 // setupDefaultHandlers configures handlers for standard Modbus functions
+// Sets up handlers for all supported Modbus function codes as defined in the specification
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6 (Function Codes)
 func (s *TCPServer) setupDefaultHandlers() {
 	// Clear existing handlers
 	s.handlers = make(map[common.FunctionCode]common.HandlerFunc)
 
 	// Read Coils (0x01)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.1
 	s.SetHandler(common.FuncReadCoils, func(ctx context.Context, req common.Request) (common.Response, error) {
 		return s.protocol.HandleReadCoils(ctx, req, s.defaultStore)
 	})
 
 	// Read Discrete Inputs (0x02)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.2
 	s.SetHandler(common.FuncReadDiscreteInputs, func(ctx context.Context, req common.Request) (common.Response, error) {
 		return s.protocol.HandleReadDiscreteInputs(ctx, req, s.defaultStore)
 	})
 
 	// Read Holding Registers (0x03)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.3
 	s.SetHandler(common.FuncReadHoldingRegisters, func(ctx context.Context, req common.Request) (common.Response, error) {
 		return s.protocol.HandleReadHoldingRegisters(ctx, req, s.defaultStore)
 	})
 
 	// Read Input Registers (0x04)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.4
 	s.SetHandler(common.FuncReadInputRegisters, func(ctx context.Context, req common.Request) (common.Response, error) {
 		return s.protocol.HandleReadInputRegisters(ctx, req, s.defaultStore)
 	})
 
 	// Write Single Coil (0x05)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.5
 	s.SetHandler(common.FuncWriteSingleCoil, func(ctx context.Context, req common.Request) (common.Response, error) {
 		return s.protocol.HandleWriteSingleCoil(ctx, req, s.defaultStore)
 	})
 
 	// Write Single Register (0x06)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.6
 	s.SetHandler(common.FuncWriteSingleRegister, func(ctx context.Context, req common.Request) (common.Response, error) {
 		return s.protocol.HandleWriteSingleRegister(ctx, req, s.defaultStore)
 	})
 
 	// Write Multiple Coils (0x0F)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.11
 	s.SetHandler(common.FuncWriteMultipleCoils, func(ctx context.Context, req common.Request) (common.Response, error) {
 		return s.protocol.HandleWriteMultipleCoils(ctx, req, s.defaultStore)
 	})
 
 	// Write Multiple Registers (0x10)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.12
 	s.SetHandler(common.FuncWriteMultipleRegisters, func(ctx context.Context, req common.Request) (common.Response, error) {
 		return s.protocol.HandleWriteMultipleRegisters(ctx, req, s.defaultStore)
 	})
 
 	// Read/Write Multiple Registers (0x17)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.17
 	s.SetHandler(common.FuncReadWriteMultipleRegisters, func(ctx context.Context, req common.Request) (common.Response, error) {
 		return s.protocol.HandleReadWriteMultipleRegisters(ctx, req, s.defaultStore)
 	})
 
 	// Read Device Identification (0x2B)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21
 	s.SetHandler(common.FuncReadDeviceIdentification, func(ctx context.Context, req common.Request) (common.Response, error) {
 		return s.protocol.HandleReadDeviceIdentification(ctx, req, s.defaultStore)
 	})
@@ -267,6 +291,8 @@ func (s *TCPServer) acceptLoop(ctx context.Context) {
 }
 
 // handleConnection handles a client connection
+// Implements the Modbus TCP message handling as defined in the specification
+// Ref: Modbus_Messaging_Implementation_Guide_V1_0b.pdf, Section 3 (Message Processing)
 func (s *TCPServer) handleConnection(conn net.Conn) {
 	ctx := context.Background()
 	remoteAddr := conn.RemoteAddr().String()
@@ -286,7 +312,13 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 		// Set a read deadline to prevent hanging forever
 		conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 
-		// Read the Modbus header (7 bytes)
+		// Read the Modbus TCP header (7 bytes)
+		// Ref: Modbus_Messaging_Implementation_Guide_V1_0b.pdf, Section 3.1 (MBAP Header)
+		// The MBAP header contains:
+		// - Transaction Identifier (2 bytes)
+		// - Protocol Identifier (2 bytes = 0 for Modbus)
+		// - Length (2 bytes, number of following bytes including unit ID)
+		// - Unit Identifier (1 byte)
 		header := make([]byte, common.TCPHeaderLength)
 		_, err := io.ReadFull(conn, header)
 		if err != nil {
@@ -302,7 +334,9 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 			return
 		}
 
-		// Parse header
+		// Parse MBAP header, using big-endian as per Modbus specification
+		// Ref: Modbus_Messaging_Implementation_Guide_V1_0b.pdf, Section 3.1 (MBAP Header)
+		// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.3 (Data Encoding)
 		transactionID := common.TransactionID(binary.BigEndian.Uint16(header[0:2]))
 		protocolID := common.ProtocolID(binary.BigEndian.Uint16(header[2:4]))
 		length := binary.BigEndian.Uint16(header[4:6])
@@ -328,7 +362,11 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 			return
 		}
 
-		// Extract function code and create request
+		// Extract function code and PDU data
+		// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 5 (Protocol Data Unit)
+		// The PDU consists of:
+		// - Function Code (1 byte)
+		// - Data (variable length, function-specific)
 		functionCode := common.FunctionCode(data[0])
 		pduData := data[1:]
 
@@ -343,11 +381,14 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 		response, err := s.dispatchRequest(ctx, request)
 		if err != nil {
 			// If it's a Modbus error, create an exception response
+			// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 7 (Exception Responses)
 			if modbusErr, ok := err.(*common.ModbusError); ok {
 				exceptionCode := modbusErr.ExceptionCode
 				s.logger.Debug(ctx, "Modbus exception: %s", err.Error())
 
 				// Create an exception response
+				// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 7 (Exception Response PDU)
+				// Exception responses set the high bit (0x80) in the function code
 				exceptionResponse := transport.NewResponse(
 					transactionID,
 					unitID,
@@ -369,6 +410,8 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 }
 
 // dispatchRequest dispatches a request to the appropriate handler
+// Routes requests to the registered handler for the specified function code
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6 (Function Codes)
 func (s *TCPServer) dispatchRequest(ctx context.Context, request common.Request) (common.Response, error) {
 	// Get the function code
 	functionCode := request.GetPDU().FunctionCode
@@ -380,6 +423,8 @@ func (s *TCPServer) dispatchRequest(ctx context.Context, request common.Request)
 
 	if !exists {
 		// Function code not supported, return an exception
+		// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 7 (Exception Codes)
+		// Exception code 0x01 = Illegal Function
 		return nil, &common.ModbusError{
 			FunctionCode:  functionCode,
 			ExceptionCode: common.ExceptionFunctionCodeNotSupported,
@@ -391,14 +436,19 @@ func (s *TCPServer) dispatchRequest(ctx context.Context, request common.Request)
 }
 
 // sendResponse sends a response back to the client
+// Encodes the Modbus Application Protocol response and sends it over the TCP connection
+// Ref: Modbus_Messaging_Implementation_Guide_V1_0b.pdf, Section 3 (Message Encoding)
 func (s *TCPServer) sendResponse(conn net.Conn, response common.Response) {
 	ctx := context.Background()
+	// Encode the full Modbus TCP message (MBAP Header + PDU)
+	// Ref: Modbus_Messaging_Implementation_Guide_V1_0b.pdf, Section 3.1 (MBAP Header)
 	data, err := response.Encode()
 	if err != nil {
 		s.logger.Error(ctx, "Error encoding response: %v", err)
 		return
 	}
 
+	// Send the encoded response to the client
 	_, err = conn.Write(data)
 	if err != nil {
 		s.logger.Error(ctx, "Error sending response: %v", err)

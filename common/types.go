@@ -3,82 +3,101 @@ package common
 import "fmt"
 
 // TransactionID is a unique identifier for a transaction
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.1 (MBAP Header), Field 1
 type TransactionID uint16
 
 // ProtocolID identifies the protocol used (e.g., Modbus TCP, RTU)
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.1 (MBAP Header), Field 2
 type ProtocolID uint16
 
 // UnitID identifies a specific device on a Modbus network
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.1 (MBAP Header), Field 4
 type UnitID byte
 
 // ExceptionCode represents an exception code in a Modbus response
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 7 (Exception Responses)
 type ExceptionCode byte
 
 // FunctionCode represents a Modbus function code
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6 (MODBUS Function Codes)
 type FunctionCode byte
 
 // Address represents a Modbus address (coil, register, etc.)
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.3 (MODBUS Data Model)
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.4 (Addressing Model - specifies 0-65535 range)
 type Address uint16
 
 // Quantity represents the number of coils or registers to read/write
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, e.g., Section 6.1 (Read Coils Request PDU defines "Quantity of Coils")
 type Quantity uint16
 
 // CoilValue alias represents a coil value
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.1 (Read Coils) and 6.5 (Write Single Coil)
 type CoilValue = bool
 
 // DiscreteInputValue alias represents a discrete input value
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.2 (Read Discrete Inputs)
 type DiscreteInputValue = bool
 
 // RegisterValue alias represents a holding register value
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.3 (Read Holding Registers)
 type RegisterValue = uint16
 
 // InputRegisterValue alias represents an input register value
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.4 (Read Input Registers)
 type InputRegisterValue = uint16
 
 // ExceptionStatus represents the return value from ReadExceptionStatus
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.7 (Read Exception Status)
 type ExceptionStatus byte
 
 // ReadDeviceIDCode represents a device identification access type
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21 (Read Device Identification)
 type ReadDeviceIDCode byte
 
 // DeviceIDObjectCode represents a device identification object code
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21 (Read Device Identification)
 type DeviceIDObjectCode byte
 
 // Function codes as defined by the Modbus specification
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6 (Function Codes)
 const (
 	// Standard function codes
-	FuncReadCoils                  FunctionCode = 0x01
-	FuncReadDiscreteInputs         FunctionCode = 0x02
-	FuncReadHoldingRegisters       FunctionCode = 0x03
-	FuncReadInputRegisters         FunctionCode = 0x04
-	FuncWriteSingleCoil            FunctionCode = 0x05
-	FuncWriteSingleRegister        FunctionCode = 0x06
-	FuncReadExceptionStatus        FunctionCode = 0x07
-	FuncWriteMultipleCoils         FunctionCode = 0x0F
-	FuncWriteMultipleRegisters     FunctionCode = 0x10
-	FuncReadWriteMultipleRegisters FunctionCode = 0x17
-	FuncReadDeviceIdentification   FunctionCode = 0x2B // MEI Transport
+	FuncReadCoils                  FunctionCode = 0x01 // Ref: Section 6.1
+	FuncReadDiscreteInputs         FunctionCode = 0x02 // Ref: Section 6.2
+	FuncReadHoldingRegisters       FunctionCode = 0x03 // Ref: Section 6.3
+	FuncReadInputRegisters         FunctionCode = 0x04 // Ref: Section 6.4
+	FuncWriteSingleCoil            FunctionCode = 0x05 // Ref: Section 6.5
+	FuncWriteSingleRegister        FunctionCode = 0x06 // Ref: Section 6.6
+	FuncReadExceptionStatus        FunctionCode = 0x07 // Ref: Section 6.7
+	FuncWriteMultipleCoils         FunctionCode = 0x0F // Ref: Section 6.11
+	FuncWriteMultipleRegisters     FunctionCode = 0x10 // Ref: Section 6.12
+	FuncReadWriteMultipleRegisters FunctionCode = 0x17 // Ref: Section 6.17
+	FuncReadDeviceIdentification   FunctionCode = 0x2B // MEI Transport, Ref: Section 6.21
 
 	// Exception codes
-	ExceptionFunctionCodeNotSupported ExceptionCode = 0x01
-	ExceptionDataAddressNotAvailable  ExceptionCode = 0x02
-	ExceptionInvalidDataValue         ExceptionCode = 0x03
-	ExceptionServerDeviceFailure      ExceptionCode = 0x04
-	ExceptionAcknowledge              ExceptionCode = 0x05
-	ExceptionServerDeviceBusy         ExceptionCode = 0x06
-	ExceptionMemoryParityError        ExceptionCode = 0x08
-	ExceptionGatewayPathUnavailable   ExceptionCode = 0x0A
-	ExceptionGatewayTargetNoResponse  ExceptionCode = 0x0B
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 7 (Exception Codes)
+	ExceptionFunctionCodeNotSupported ExceptionCode = 0x01 // Ref: Section 7.1
+	ExceptionDataAddressNotAvailable  ExceptionCode = 0x02 // Ref: Section 7.2
+	ExceptionInvalidDataValue         ExceptionCode = 0x03 // Ref: Section 7.3
+	ExceptionServerDeviceFailure      ExceptionCode = 0x04 // Ref: Section 7.4
+	ExceptionAcknowledge              ExceptionCode = 0x05 // Ref: Section 7.5
+	ExceptionServerDeviceBusy         ExceptionCode = 0x06 // Ref: Section 7.6
+	ExceptionMemoryParityError        ExceptionCode = 0x08 // Ref: Section 7.8
+	ExceptionGatewayPathUnavailable   ExceptionCode = 0x0A // Ref: Section 7.9
+	ExceptionGatewayTargetNoResponse  ExceptionCode = 0x0B // Ref: Section 7.10
 )
 
 // MEIType represents a Modbus Encapsulated Interface type
 // Used in function code 0x2B (Modbus Encapsulated Interface)
 // MEIType indicates which sub-function to execute
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21
 type MEIType byte
 
 // MEI Types
 const (
 	// MEIReadDeviceID is the MEI type for reading device identification (0x0E)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21
 	MEIReadDeviceID MEIType = 0x0E
 
 	// Other MEI types from the specification could be added here:
@@ -88,14 +107,19 @@ const (
 )
 
 // Read Device ID codes
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21
 const (
 	// ReadDeviceIDBasicStream requests basic device identification (stream access for objects 0x00-0x02)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21, Table 73
 	ReadDeviceIDBasicStream ReadDeviceIDCode = 0x01
 	// ReadDeviceIDRegularStream requests regular device identification (stream access through UserApplicationName)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21, Table 73
 	ReadDeviceIDRegularStream ReadDeviceIDCode = 0x02
 	// ReadDeviceIDExtendedStream requests extended device identification (stream access for all objects)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21, Table 73
 	ReadDeviceIDExtendedStream ReadDeviceIDCode = 0x03
 	// ReadDeviceIDSpecificObject requests a specific identification object (individual access)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21, Table 73
 	ReadDeviceIDSpecificObject ReadDeviceIDCode = 0x04
 
 	// Alias the old names for backwards compatibility
@@ -106,6 +130,7 @@ const (
 )
 
 // Device identification object IDs
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21, Table 72
 const (
 	// Basic identification objects (mandatory)
 	DeviceIDVendorName         DeviceIDObjectCode = 0x00 // VendorName - Mandatory basic object
@@ -252,32 +277,48 @@ func (s ExceptionStatus) String() string {
 }
 
 // Protocol-specific constants
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4 (Data Model)
 const (
 	// Modbus TCP
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.1 (MBAP Header)
 	TCPHeaderLength = 7   // Transaction ID (2) + Protocol ID (2) + Length (2) + Unit ID (1)
 	MaxPDULength    = 253 // Maximum PDU length
 	MaxADULength    = 260 // Maximum ADU length (TCP with header)
 	DefaultTCPPort  = 502 // Default Modbus TCP port
 
 	// Data sizes
-	BytesPerCoil          = 1
-	BytesPerDiscreteInput = 1
-	BytesPerRegister      = 2
-	BytesPerInputRegister = 2
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.3 (Data Encoding)
+	// BytesPerCoil and BytesPerDiscreteInput refer to how individual statuses are packed,
+	// not that each coil/input uses a full byte in a multi-item request/response.
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.1 (Read Coils Response - "coil status ... packed as one coil per bit")
+	BytesPerCoil          = 1 // Represents a single status bit; multiple are packed.
+	BytesPerDiscreteInput = 1 // Represents a single status bit; multiple are packed.
+	BytesPerRegister      = 2 // Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.3 (Read Holding Registers Response - "Each register data in two bytes")
+	BytesPerInputRegister = 2 // Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.4 (Read Input Registers Response)
 
 	// Modbus limits
-	MaxCoilCount     = 2000 // Maximum number of coils in a single request
-	MaxRegisterCount = 125  // Maximum number of registers in a single request
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.x (various function specific limits)
+	MaxCoilCount     = 2000 // Maximum number of coils in a single request, Ref: Section 6.11
+	MaxRegisterCount = 125  // Maximum number of registers in a single request, Ref: Section 6.12
 
-	// Modbus protocol constants
-	CoilOnU16  = 0xFF00
-	CoilOffU16 = 0x0000
+	// Coil Values as defined in the Modbus specification
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.5 (Write Single Coil)
+	//
+	// "The requested ON/OFF state is specified by a constant in the Coil Value field.
+	// A value of 0xFF00 requests the coil to be ON.
+	// A value of 0x0000 requests the coil to be OFF.
+	// All other values are illegal and will not affect the coil."
+	//
+	CoilOnU16  = 0xFF00 // ON value for coils in register format
+	CoilOffU16 = 0x0000 // OFF value for coils in register format
 )
 
 // TCPProtocolIdentifier is the standard identifier for Modbus TCP
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.1
 const TCPProtocolIdentifier = ProtocolID(0)
 
 // ExceptionBit is the bit that is set in the function code to indicate an exception response
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 7 (Exception Responses)
 const ExceptionBit byte = 0x80
 
 // IsException checks if a function code represents an exception

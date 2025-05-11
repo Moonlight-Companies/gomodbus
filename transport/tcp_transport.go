@@ -14,20 +14,21 @@ import (
 )
 
 // TCPTransport implements the common.Transport interface for Modbus TCP
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4 (MODBUS Data Model)
 type TCPTransport struct {
 	logger          common.LoggerInterface
-	host            string
-	port            int
-	timeout         time.Duration
-	conn            net.Conn
-	reader          io.Reader
-	writer          io.Writer
-	mutex           sync.Mutex
-	connected       bool
-	closeOnce       sync.Once
-	transactionPool *TransactionPool
-	writeChan       chan *Transaction
-	done            chan struct{}
+	host            string                 // Server hostname/IP
+	port            int                    // TCP port (default: 502, per spec Section 4.1)
+	timeout         time.Duration          // Connection timeout
+	conn            net.Conn               // TCP connection
+	reader          io.Reader              // For reading data from the connection
+	writer          io.Writer              // For writing data to the connection
+	mutex           sync.Mutex             // Protects access to connection state
+	connected       bool                   // Indicates if we have an active connection
+	closeOnce       sync.Once              // Ensures we only close the connection once
+	transactionPool *TransactionPool       // Manages transaction IDs and responses
+	writeChan       chan *Transaction      // Channel for queuing write operations
+	done            chan struct{}          // Signals shutdown of goroutines
 }
 
 // TCPTransportOption is a function that configures a TCPTransport
@@ -229,6 +230,8 @@ func (t *TCPTransport) ResetTransactions(ctx context.Context) {
 }
 
 // readLoop continuously reads from the connection and handles responses
+// This implements the client side of the Modbus TCP protocol
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4 (MODBUS Data Model)
 func (t *TCPTransport) readLoop() {
 	ctx := context.Background()
 	t.logger.Debug(ctx, "Starting read loop")
@@ -258,6 +261,8 @@ func (t *TCPTransport) readLoop() {
 			}
 
 			// Read the response header (7 bytes)
+			// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.1 (MBAP Header)
+			// MBAP Header is 7 bytes: Transaction ID (2), Protocol ID (2), Length (2), Unit ID (1)
 			header := make([]byte, common.TCPHeaderLength)
 			_, err := io.ReadFull(t.reader, header)
 			if err != nil {
@@ -290,22 +295,29 @@ func (t *TCPTransport) readLoop() {
 				hexLogger.Hexdump(ctx, header)
 			}
 
-			// Parse the header
+			// Parse the MBAP header
+			// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.1, Table 3
+			// Field 1: Transaction Identifier (2 bytes)
 			transactionID := common.TransactionID(binary.BigEndian.Uint16(header[0:2]))
+			// Field 2: Protocol Identifier (2 bytes) - Always 0 for Modbus
 			protocolID := common.ProtocolID(binary.BigEndian.Uint16(header[2:4]))
+			// Field 3: Length (2 bytes) - Number of bytes following
 			length := binary.BigEndian.Uint16(header[4:6])
+			// Field 4: Unit Identifier (1 byte) - Slave address
 			unitID := common.UnitID(header[6])
 
 			t.logger.Debug(ctx, "Received response: txID=%d, length=%d", transactionID, length)
 
-			// Check ProtocolID
+			// Check ProtocolID - should be 0 for Modbus TCP
+			// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.1
 			if protocolID != common.TCPProtocolIdentifier {
 				t.logger.Error(ctx, "Invalid protocol ID: %d", protocolID)
 				t.processError(transactionID, common.ErrInvalidProtocolHeader)
 				continue
 			}
 
-			// Length is the number of bytes following (unit ID + PDU)
+			// Length is the number of bytes following (Unit ID + PDU)
+			// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.1
 			// We already read the unit ID, so we need length-1 more bytes
 			bodyLength := int(length) - 1
 			if bodyLength <= 0 {
@@ -314,7 +326,8 @@ func (t *TCPTransport) readLoop() {
 				continue
 			}
 
-			// Read the function code and data
+			// Read the function code and data (PDU)
+			// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6 (MODBUS Function Codes)
 			body := make([]byte, bodyLength)
 			_, err = io.ReadFull(t.reader, body)
 			if err != nil {
@@ -349,7 +362,10 @@ func (t *TCPTransport) readLoop() {
 			}
 
 			// Create a response
+			// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6 (MODBUS Function Codes)
+			// The first byte of the PDU is the function code
 			functionCode := common.FunctionCode(body[0])
+			// The rest is the response data specific to that function code
 			responseData := body[1:]
 			response := NewResponse(transactionID, unitID, functionCode, responseData)
 
@@ -368,6 +384,8 @@ func (t *TCPTransport) readLoop() {
 }
 
 // writeLoop continuously processes requests from the writeChan
+// This implements the client side of sending Modbus TCP requests
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4 (MODBUS Data Model)
 func (t *TCPTransport) writeLoop() {
 	ctx := context.Background()
 	t.logger.Debug(ctx, "Starting write loop")
@@ -416,6 +434,8 @@ func (t *TCPTransport) writeLoop() {
 				tx.Request.GetTransactionID())
 
 			// Encode the request
+			// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.1 (MBAP Header)
+			// This will create the MBAP header and PDU according to the Modbus specification
 			data, err := tx.Request.Encode()
 			if err != nil {
 				t.logger.Error(ctx, "Error encoding request: %v", err)
@@ -491,15 +511,20 @@ func (t *TCPTransport) setDisconnected(err error) {
 }
 
 // Send sends a request and returns the response
+// This implements the client-side request/response pattern for Modbus TCP
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4 (MODBUS Data Model)
 func (t *TCPTransport) Send(ctx context.Context, request common.Request) (common.Response, error) {
 	if !t.IsConnected() {
 		return nil, common.ErrNotConnected
 	}
 
-	// txid pre allocation should be 0
+	// Log the function code being sent
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6 (MODBUS Function Codes)
 	t.logger.Debug(ctx, "Sending request: function=%d", request.GetPDU().FunctionCode)
 
 	// Create a transaction and add it to the pool
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.1 (MBAP Header)
+	// The transaction ID will be assigned by the pool and used to match the response
 	tx, err := t.transactionPool.Place(ctx, request)
 	if err != nil {
 		t.logger.Error(ctx, "Failed to create transaction: %v", err)

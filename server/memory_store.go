@@ -9,11 +9,26 @@ import (
 )
 
 // MemoryStore implements DataStore with in-memory storage
+// Provides storage for all four Modbus data types as defined in the specification
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.3 (Data Model)
 type MemoryStore struct {
+	// Coils (read-write 1-bit outputs) - Function codes 0x01 (read) and 0x05/0x0F (write)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.3 (Coil/Output)
 	coils            map[common.Address]common.CoilValue
+
+	// Discrete Inputs (read-only 1-bit inputs) - Function code 0x02 (read)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.3 (Discrete Input)
 	discreteInputs   map[common.Address]common.DiscreteInputValue
+
+	// Holding Registers (read-write 16-bit registers) - Function codes 0x03 (read) and 0x06/0x10 (write)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.3 (Holding Register)
 	holdingRegisters map[common.Address]common.RegisterValue
+
+	// Input Registers (read-only 16-bit registers) - Function code 0x04 (read)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.3 (Input Register)
 	inputRegisters   map[common.Address]common.InputRegisterValue
+
+	// Mutex to protect concurrent access to maps
 	mu               sync.RWMutex
 }
 
@@ -28,7 +43,11 @@ func NewMemoryStore() *MemoryStore {
 }
 
 // ReadCoils reads coil values from the data store
+// Implements function code 0x01 (Read Coils) data access
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.1 (Read Coils)
 func (s *MemoryStore) ReadCoils(ctx context.Context, address common.Address, quantity common.Quantity) ([]common.CoilValue, error) {
+	// Validate quantity within Modbus limits (1-2000 coils)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.1 (Quantity of Coils)
 	if quantity == 0 || quantity > common.MaxCoilCount {
 		return nil, common.ErrInvalidQuantity
 	}
@@ -49,7 +68,11 @@ func (s *MemoryStore) ReadCoils(ctx context.Context, address common.Address, qua
 }
 
 // ReadDiscreteInputs reads discrete input values from the data store
+// Implements function code 0x02 (Read Discrete Inputs) data access
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.2 (Read Discrete Inputs)
 func (s *MemoryStore) ReadDiscreteInputs(ctx context.Context, address common.Address, quantity common.Quantity) ([]common.DiscreteInputValue, error) {
+	// Validate quantity within Modbus limits (1-2000 inputs)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.2 (Quantity of Inputs)
 	if quantity == 0 || quantity > common.MaxCoilCount {
 		return nil, common.ErrInvalidQuantity
 	}
@@ -70,7 +93,11 @@ func (s *MemoryStore) ReadDiscreteInputs(ctx context.Context, address common.Add
 }
 
 // ReadHoldingRegisters reads holding register values from the data store
+// Implements function code 0x03 (Read Holding Registers) data access
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.3 (Read Holding Registers)
 func (s *MemoryStore) ReadHoldingRegisters(ctx context.Context, address common.Address, quantity common.Quantity) ([]common.RegisterValue, error) {
+	// Validate quantity within Modbus limits (1-125 registers)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.3 (Quantity of Registers)
 	if quantity == 0 || quantity > common.MaxRegisterCount {
 		return nil, common.ErrInvalidQuantity
 	}
@@ -91,7 +118,11 @@ func (s *MemoryStore) ReadHoldingRegisters(ctx context.Context, address common.A
 }
 
 // ReadInputRegisters reads input register values from the data store
+// Implements function code 0x04 (Read Input Registers) data access
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.4 (Read Input Registers)
 func (s *MemoryStore) ReadInputRegisters(ctx context.Context, address common.Address, quantity common.Quantity) ([]common.InputRegisterValue, error) {
+	// Validate quantity within Modbus limits (1-125 registers)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.4 (Quantity of Input Registers)
 	if quantity == 0 || quantity > common.MaxRegisterCount {
 		return nil, common.ErrInvalidQuantity
 	}
@@ -112,6 +143,8 @@ func (s *MemoryStore) ReadInputRegisters(ctx context.Context, address common.Add
 }
 
 // WriteSingleCoil writes a single coil value to the data store
+// Implements function code 0x05 (Write Single Coil) data access
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.5 (Write Single Coil)
 func (s *MemoryStore) WriteSingleCoil(ctx context.Context, address common.Address, value common.CoilValue) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -121,6 +154,8 @@ func (s *MemoryStore) WriteSingleCoil(ctx context.Context, address common.Addres
 }
 
 // WriteSingleRegister writes a single register value to the data store
+// Implements function code 0x06 (Write Single Register) data access
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.6 (Write Single Register)
 func (s *MemoryStore) WriteSingleRegister(ctx context.Context, address common.Address, value common.RegisterValue) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -130,7 +165,11 @@ func (s *MemoryStore) WriteSingleRegister(ctx context.Context, address common.Ad
 }
 
 // WriteMultipleCoils writes multiple coil values to the data store
+// Implements function code 0x0F (Write Multiple Coils) data access
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.11 (Write Multiple Coils)
 func (s *MemoryStore) WriteMultipleCoils(ctx context.Context, address common.Address, values []common.CoilValue) error {
+	// Validate quantity within Modbus limits (1-1968 coils)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.11 (Quantity of Outputs)
 	if len(values) == 0 || len(values) > int(common.MaxCoilCount) {
 		return common.ErrInvalidQuantity
 	}
@@ -147,7 +186,11 @@ func (s *MemoryStore) WriteMultipleCoils(ctx context.Context, address common.Add
 }
 
 // WriteMultipleRegisters writes multiple register values to the data store
+// Implements function code 0x10 (Write Multiple Registers) data access
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.12 (Write Multiple Registers)
 func (s *MemoryStore) WriteMultipleRegisters(ctx context.Context, address common.Address, values []common.RegisterValue) error {
+	// Validate quantity within Modbus limits (1-123 registers)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.12 (Quantity of Registers)
 	if len(values) == 0 || len(values) > int(common.MaxRegisterCount) {
 		return common.ErrInvalidQuantity
 	}

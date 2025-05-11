@@ -141,11 +141,22 @@ func (h *ProtocolHandler) parseRegisterResponse(itemType string, data []byte, qu
 }
 
 // GenerateReadCoilsRequest generates a request to read coils
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.1 (Read Coils)
+//
+// PDU Data:
+// Starting Address (2 bytes) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.1
+// Quantity of Coils (2 bytes) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.1
+// Quantity constraints: 1 to 2000 - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.1
 func (h *ProtocolHandler) GenerateReadCoilsRequest(address common.Address, quantity common.Quantity) ([]byte, error) {
 	return h.generateReadRequest("coils", address, quantity, common.MaxCoilCount)
 }
 
 // ParseReadCoilsResponse parses a response to a read coils request
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.1 (Read Coils)
+//
+// PDU Data:
+// Byte Count (1 byte) - Number of data bytes to follow (N) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.1
+// Coil Status (Byte Count bytes, packed bits, LSB of first byte = lowest address) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.1
 func (h *ProtocolHandler) ParseReadCoilsResponse(data []byte, quantity common.Quantity) ([]common.CoilValue, error) {
 	// Use the parseBitResponse helper and cast the result to the expected type
 	values, err := h.parseBitResponse("coils", data, quantity)
@@ -163,11 +174,13 @@ func (h *ProtocolHandler) ParseReadCoilsResponse(data []byte, quantity common.Qu
 }
 
 // GenerateReadDiscreteInputsRequest generates a request to read discrete inputs
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.2 (Read Discrete Inputs)
 func (h *ProtocolHandler) GenerateReadDiscreteInputsRequest(address common.Address, quantity common.Quantity) ([]byte, error) {
 	return h.generateReadRequest("discrete inputs", address, quantity, common.MaxCoilCount)
 }
 
 // ParseReadDiscreteInputsResponse parses a response to a read discrete inputs request
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.2 (Read Discrete Inputs)
 func (h *ProtocolHandler) ParseReadDiscreteInputsResponse(data []byte, quantity common.Quantity) ([]common.DiscreteInputValue, error) {
 	// Use the parseBitResponse helper and cast the result to the expected type
 	values, err := h.parseBitResponse("discrete inputs", data, quantity)
@@ -185,11 +198,13 @@ func (h *ProtocolHandler) ParseReadDiscreteInputsResponse(data []byte, quantity 
 }
 
 // GenerateReadHoldingRegistersRequest generates a request to read holding registers
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.3 (Read Holding Registers)
 func (h *ProtocolHandler) GenerateReadHoldingRegistersRequest(address common.Address, quantity common.Quantity) ([]byte, error) {
 	return h.generateReadRequest("holding registers", address, quantity, common.MaxRegisterCount)
 }
 
 // ParseReadHoldingRegistersResponse parses a response to a read holding registers request
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.3 (Read Holding Registers)
 func (h *ProtocolHandler) ParseReadHoldingRegistersResponse(data []byte, quantity common.Quantity) ([]common.RegisterValue, error) {
 	// Use the parseRegisterResponse helper and cast the result to the expected type
 	values, err := h.parseRegisterResponse("holding registers", data, quantity)
@@ -207,11 +222,13 @@ func (h *ProtocolHandler) ParseReadHoldingRegistersResponse(data []byte, quantit
 }
 
 // GenerateReadInputRegistersRequest generates a request to read input registers
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.4 (Read Input Registers)
 func (h *ProtocolHandler) GenerateReadInputRegistersRequest(address common.Address, quantity common.Quantity) ([]byte, error) {
 	return h.generateReadRequest("input registers", address, quantity, common.MaxRegisterCount)
 }
 
 // ParseReadInputRegistersResponse parses a response to a read input registers request
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.4 (Read Input Registers)
 func (h *ProtocolHandler) ParseReadInputRegistersResponse(data []byte, quantity common.Quantity) ([]common.InputRegisterValue, error) {
 	// Use the parseRegisterResponse helper and cast the result to the expected type
 	values, err := h.parseRegisterResponse("input registers", data, quantity)
@@ -229,14 +246,24 @@ func (h *ProtocolHandler) ParseReadInputRegistersResponse(data []byte, quantity 
 }
 
 // GenerateWriteSingleCoilRequest generates a request to write a single coil
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.5 (Write Single Coil)
+//
+// PDU Data:
+// Output Address (2 bytes) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.5
+// Output Value (2 bytes: 0xFF00 for ON, 0x0000 for OFF) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.5
 func (h *ProtocolHandler) GenerateWriteSingleCoilRequest(address common.Address, value common.CoilValue) ([]byte, error) {
 	ctx := context.Background()
 	h.logger.Debug(ctx, "Generating write single coil request: address=%d, value=%t", address, value)
 
 	data := make([]byte, 4)
+	// Write address in big-endian format (most significant byte first)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.3 (Data Encoding)
 	binary.BigEndian.PutUint16(data[0:2], uint16(address))
 
 	// Encode boolean as 0xFF00 (on) or 0x0000 (off)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.5
+	// The requested ON/OFF state is specified by a constant in the Coil Value field.
+	// A value of 0xFF00 requests the coil to be ON. A value of 0x0000 requests the coil to be OFF.
 	if value {
 		binary.BigEndian.PutUint16(data[2:4], common.CoilOnU16)
 	} else {
@@ -248,6 +275,11 @@ func (h *ProtocolHandler) GenerateWriteSingleCoilRequest(address common.Address,
 }
 
 // ParseWriteSingleCoilResponse parses a response to a write single coil request
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.5 (Write Single Coil)
+//
+// PDU Data (Echo of request):
+// Output Address (2 bytes) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.5
+// Output Value (2 bytes) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.5
 func (h *ProtocolHandler) ParseWriteSingleCoilResponse(data []byte) (common.Address, common.CoilValue, error) {
 	ctx := context.Background()
 	h.logger.Debug(ctx, "Parsing write single coil response: data=%v", data)
@@ -257,9 +289,13 @@ func (h *ProtocolHandler) ParseWriteSingleCoilResponse(data []byte) (common.Addr
 		return 0, false, common.ErrInvalidResponseLength
 	}
 
+	// Parse address from big-endian format
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.3 (Data Encoding)
 	address := common.Address(binary.BigEndian.Uint16(data[0:2]))
 	value := binary.BigEndian.Uint16(data[2:4])
 
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.5
+	// The normal response is an echo of the request
 	switch value {
 	case common.CoilOnU16:
 		h.logger.Debug(ctx, "Parsed write single coil response: address=%d, value=true", address)
@@ -304,6 +340,14 @@ func (h *ProtocolHandler) ParseWriteSingleRegisterResponse(data []byte) (common.
 }
 
 // GenerateWriteMultipleCoilsRequest generates a request to write multiple coils
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.11 (Write Multiple Coils)
+//
+// PDU Data:
+// Starting Address (2 bytes) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.11
+// Quantity of Outputs (2 bytes) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.11
+// Byte Count (1 byte) - Number of data bytes to follow - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.11
+// Output Value (Byte Count bytes, packed bits) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.11
+// Quantity constraints: 1 to 1968 (0x07B0) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.11 (Table of Constraints)
 func (h *ProtocolHandler) GenerateWriteMultipleCoilsRequest(address common.Address, values []common.CoilValue) ([]byte, error) {
 	ctx := context.Background()
 	h.logger.Debug(ctx, "Generating write multiple coils request: address=%d, count=%d",
@@ -318,14 +362,16 @@ func (h *ProtocolHandler) GenerateWriteMultipleCoilsRequest(address common.Addre
 	byteCount := int(math.Ceil(float64(len(values)) / 8.0))
 	data := make([]byte, 5+byteCount)
 
-	// Address
+	// Address - in big-endian format
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.3 (Data Encoding)
 	binary.BigEndian.PutUint16(data[0:2], uint16(address))
-	// Quantity
+	// Quantity - in big-endian format
 	binary.BigEndian.PutUint16(data[2:4], uint16(len(values)))
 	// Byte count
 	data[4] = byte(byteCount)
 
-	// Pack coil values
+	// Pack coil values - LSB of first byte is the lowest coil address
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.11
 	for i, value := range values {
 		byteIndex := i / 8
 		bitIndex := i % 8
@@ -340,6 +386,11 @@ func (h *ProtocolHandler) GenerateWriteMultipleCoilsRequest(address common.Addre
 }
 
 // ParseWriteMultipleCoilsResponse parses a response to a write multiple coils request
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.11 (Write Multiple Coils)
+//
+// PDU Data:
+// Starting Address (2 bytes) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.11
+// Quantity of Outputs (2 bytes) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.11
 func (h *ProtocolHandler) ParseWriteMultipleCoilsResponse(data []byte) (common.Address, common.Quantity, error) {
 	ctx := context.Background()
 	h.logger.Debug(ctx, "Parsing write multiple coils response: data=%v", data)
@@ -349,6 +400,8 @@ func (h *ProtocolHandler) ParseWriteMultipleCoilsResponse(data []byte) (common.A
 		return 0, 0, common.ErrInvalidResponseLength
 	}
 
+	// Parse address and quantity from big-endian format
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.3 (Data Encoding)
 	address := common.Address(binary.BigEndian.Uint16(data[0:2]))
 	quantity := common.Quantity(binary.BigEndian.Uint16(data[2:4]))
 
@@ -407,6 +460,17 @@ func (h *ProtocolHandler) ParseWriteMultipleRegistersResponse(data []byte) (comm
 }
 
 // GenerateReadWriteMultipleRegistersRequest generates a request to read and write multiple registers
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.17 (Read/Write Multiple Registers)
+//
+// PDU Data:
+// Read Starting Address (2 bytes) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.17
+// Quantity to Read (2 bytes) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.17
+// Write Starting Address (2 bytes) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.17
+// Quantity to Write (2 bytes) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.17
+// Write Byte Count (1 byte) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.17
+// Write Registers Value (N * 2 bytes) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.17
+// Read Quantity constraints: 1 to 125 (0x007D) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.17 (Table of Constraints)
+// Write Quantity constraints: 1 to 121 (0x0079) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.17 (Table of Constraints)
 func (h *ProtocolHandler) GenerateReadWriteMultipleRegistersRequest(readAddress common.Address, readQuantity common.Quantity, writeAddress common.Address, writeValues []common.RegisterValue) ([]byte, error) {
 	ctx := context.Background()
 	h.logger.Debug(ctx, "Generating read/write multiple registers request: readAddress=%d, readQuantity=%d, writeAddress=%d, writeCount=%d",
@@ -421,24 +485,27 @@ func (h *ProtocolHandler) GenerateReadWriteMultipleRegistersRequest(readAddress 
 		return nil, common.ErrInvalidQuantity
 	}
 
-	// Calculate byte count
+	// Calculate byte count (2 bytes per register)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.3 (Data Encoding)
 	byteCount := len(writeValues) * 2
 
 	// Allocate data
 	data := make([]byte, 9+byteCount)
 
-	// Read address
+	// Read address - in big-endian format
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.3 (Data Encoding)
 	binary.BigEndian.PutUint16(data[0:2], uint16(readAddress))
-	// Read quantity
+	// Read quantity - in big-endian format
 	binary.BigEndian.PutUint16(data[2:4], uint16(readQuantity))
-	// Write address
+	// Write address - in big-endian format
 	binary.BigEndian.PutUint16(data[4:6], uint16(writeAddress))
-	// Write quantity
+	// Write quantity - in big-endian format
 	binary.BigEndian.PutUint16(data[6:8], uint16(len(writeValues)))
 	// Byte count
 	data[8] = byte(byteCount)
 
-	// Pack register values
+	// Pack register values - each value is 2 bytes in big-endian format
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 4.3 (Data Encoding)
 	for i, value := range writeValues {
 		binary.BigEndian.PutUint16(data[9+i*2:9+i*2+2], value)
 	}
@@ -448,8 +515,15 @@ func (h *ProtocolHandler) GenerateReadWriteMultipleRegistersRequest(readAddress 
 }
 
 // ParseReadWriteMultipleRegistersResponse parses a response to a read/write multiple registers request
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.17 (Read/Write Multiple Registers)
+//
+// PDU Data:
+// Byte Count (1 byte) - N*2 bytes of read data - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.17
+// Read Registers Value (N * 2 bytes) - Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.17
 func (h *ProtocolHandler) ParseReadWriteMultipleRegistersResponse(data []byte, readQuantity common.Quantity) ([]common.RegisterValue, error) {
 	// Same implementation as ParseReadHoldingRegistersResponse
+	// Reading holding registers and the read part of ReadWriteMultipleRegisters use the same response format
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.17
 	return h.ParseReadHoldingRegistersResponse(data, readQuantity)
 }
 
@@ -517,16 +591,23 @@ func (h *ProtocolHandler) ParseReadDeviceIdentificationResponse(data []byte) (*c
 		return nil, common.ErrInvalidValue
 	}
 
+	// Create device identification object
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21 (Response PDU Format)
 	result := &common.DeviceIdentification{
-		ReadDeviceIDCode: common.ReadDeviceIDCode(data[1]),
-		ConformityLevel:  data[2],
-		MoreFollows:      data[3] != 0,
-		NextObjectID:     common.DeviceIDObjectCode(data[4]),
-		NumberOfObjects:  data[5],
-		Objects:          make([]common.DeviceIDObject, 0, data[5]),
+		ReadDeviceIDCode: common.ReadDeviceIDCode(data[1]), // Echoes the request's ReadDeviceIDCode
+		ConformityLevel:  data[2],                          // Conformity level of the device
+		MoreFollows:      data[3] != 0,                      // Indicates if more objects follow in subsequent requests
+		NextObjectID:     common.DeviceIDObjectCode(data[4]), // Object ID to request next if MoreFollows is true
+		NumberOfObjects:  data[5],                           // Number of objects in this response
+		Objects:          make([]common.DeviceIDObject, 0, data[5]), // The actual objects
 	}
 
 	// Parse objects
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21 (Response Objects Format)
+	// Each object has the format:
+	// - Object ID (1 byte)
+	// - Object Length (1 byte)
+	// - Object Value (n bytes)
 	offset := 6
 	for i := 0; i < int(data[5]); i++ {
 		// Check if we have enough data
@@ -551,10 +632,12 @@ func (h *ProtocolHandler) ParseReadDeviceIdentificationResponse(data []byte) (*c
 		offset += int(objectLength)
 
 		// Add object to result
+		// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21, Table 72
+		// Create object with ID, length, and value fields as per the specification
 		result.Objects = append(result.Objects, common.DeviceIDObject{
-			ID:     objectID,
-			Length: objectLength,
-			Value:  objectValue,
+			ID:     objectID,     // Object ID code as defined in Table 72
+			Length: objectLength, // Length of the object value
+			Value:  objectValue,  // String value of the object
 		})
 	}
 
