@@ -1,4 +1,4 @@
-# GoModbus
+# gomodbus
 
 A modern, thread-safe, and type-safe Modbus TCP client/server library for Go.
 
@@ -75,7 +75,7 @@ func main() {
         return
     }
     defer modbusClient.Disconnect(context.Background())
-    
+
     // Now you can use the client for Modbus operations
 }
 ```
@@ -317,11 +317,11 @@ func main() {
     // Wait for termination signal
     <-sig
     fmt.Println("Shutting down server...")
-    
+
     // Create a context with timeout for shutdown
     shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
     defer shutdownCancel()
-    
+
     // Stop the server
     err := modbusServer.Stop(shutdownCtx)
     if err != nil {

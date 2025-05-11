@@ -486,18 +486,18 @@ func (h *serverProtocolHandler) HandleReadDeviceIdentification(ctx context.Conte
 	// Fixed object values for this server
 	objectValues := map[common.DeviceIDObjectCode]string{
 		// Basic identification objects (mandatory)
-		common.DeviceIDVendorName:         "GoModbus",
+		common.DeviceIDVendorName:         "gomodbus",
 		common.DeviceIDProductCode:        "GM-001",
 		common.DeviceIDMajorMinorRevision: "1.0",
 
 		// Regular identification objects (optional)
-		common.DeviceIDVendorURL:          "https://github.com/Moonlight-Companies/gomodbus",
-		common.DeviceIDProductName:        "GoModbus Server",
-		common.DeviceIDModelName:          "Modbus TCP Server",
-		common.DeviceIDUserAppName:        "Example Server",
+		common.DeviceIDVendorURL:   "https://github.com/Moonlight-Companies/gomodbus",
+		common.DeviceIDProductName: "gomodbus Server",
+		common.DeviceIDModelName:   "Modbus TCP Server",
+		common.DeviceIDUserAppName: "Example Server",
 
 		// Extended identification objects (vendor-specific)
-		common.DeviceIDObjectCode(0x80):   "Extended Object Example",
+		common.DeviceIDObjectCode(0x80): "Extended Object Example",
 	}
 
 	// Add objects to response

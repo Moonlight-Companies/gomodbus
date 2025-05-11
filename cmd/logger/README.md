@@ -1,10 +1,10 @@
 # Custom Logger Example
 
-This example demonstrates how to implement a custom logger for the GoModbus library.
+This example demonstrates how to implement a custom logger for the gomodbus library.
 
 ## Overview
 
-The GoModbus library uses an interface-based design for logging, which allows you to integrate with any logging framework by implementing the `common.LoggerInterface` interface.
+The gomodbus library uses an interface-based design for logging, which allows you to integrate with any logging framework by implementing the `common.LoggerInterface` interface.
 
 ## Usage
 

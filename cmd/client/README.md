@@ -1,6 +1,6 @@
-# GoModbus Client Examples
+# gomodbus Client Examples
 
-This directory contains example code for each Modbus function supported by the GoModbus library.
+This directory contains example code for each Modbus function supported by the gomodbus library.
 
 ## Examples
 
