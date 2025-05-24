@@ -298,8 +298,12 @@ const (
 
 	// Modbus limits
 	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.x (various function specific limits)
-	MaxCoilCount     = 2000 // Maximum number of coils in a single request, Ref: Section 6.11
-	MaxRegisterCount = 125  // Maximum number of registers in a single request, Ref: Section 6.12
+	MaxCoilCount            = 2000 // Maximum number of coils in Read Coils/Discrete Inputs (0x07D0), Ref: Section 6.1, 6.2
+	MaxWriteCoilCount       = 1968 // Maximum number of coils in Write Multiple Coils (0x07B0), Ref: Section 6.11
+	MaxRegisterCount        = 125  // Maximum number of registers in Read requests, Ref: Section 6.3, 6.4
+	MaxWriteRegisterCount   = 123  // Maximum number of registers in Write Multiple Registers (0x007B), Ref: Section 6.12
+	MaxReadWriteReadCount   = 125  // Maximum number of registers to read in Read/Write Multiple (0x007D), Ref: Section 6.17
+	MaxReadWriteWriteCount  = 121  // Maximum number of registers to write in Read/Write Multiple (0x0079), Ref: Section 6.17
 
 	// Coil Values as defined in the Modbus specification
 	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.5 (Write Single Coil)

@@ -353,7 +353,7 @@ func (h *ProtocolHandler) GenerateWriteMultipleCoilsRequest(address common.Addre
 	h.logger.Debug(ctx, "Generating write multiple coils request: address=%d, count=%d",
 		address, len(values))
 
-	if len(values) == 0 || len(values) > common.MaxCoilCount {
+	if len(values) == 0 || len(values) > common.MaxWriteCoilCount {
 		h.logger.Error(ctx, "Invalid quantity for write multiple coils request: %d", len(values))
 		return nil, common.ErrInvalidQuantity
 	}
@@ -415,7 +415,7 @@ func (h *ProtocolHandler) GenerateWriteMultipleRegistersRequest(address common.A
 	h.logger.Debug(ctx, "Generating write multiple registers request: address=%d, count=%d",
 		address, len(values))
 
-	if len(values) == 0 || len(values) > common.MaxRegisterCount {
+	if len(values) == 0 || len(values) > common.MaxWriteRegisterCount {
 		h.logger.Error(ctx, "Invalid quantity for write multiple registers request: %d", len(values))
 		return nil, common.ErrInvalidQuantity
 	}
@@ -476,11 +476,11 @@ func (h *ProtocolHandler) GenerateReadWriteMultipleRegistersRequest(readAddress 
 	h.logger.Debug(ctx, "Generating read/write multiple registers request: readAddress=%d, readQuantity=%d, writeAddress=%d, writeCount=%d",
 		readAddress, readQuantity, writeAddress, len(writeValues))
 
-	if readQuantity == 0 || readQuantity > common.MaxRegisterCount {
+	if readQuantity == 0 || readQuantity > common.MaxReadWriteReadCount {
 		h.logger.Error(ctx, "Invalid read quantity for read/write multiple registers request: %d", readQuantity)
 		return nil, common.ErrInvalidQuantity
 	}
-	if len(writeValues) == 0 || len(writeValues) > common.MaxRegisterCount {
+	if len(writeValues) == 0 || len(writeValues) > common.MaxReadWriteWriteCount {
 		h.logger.Error(ctx, "Invalid write quantity for read/write multiple registers request: %d", len(writeValues))
 		return nil, common.ErrInvalidQuantity
 	}

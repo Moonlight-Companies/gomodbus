@@ -319,7 +319,7 @@ func (h *serverProtocolHandler) HandleWriteMultipleCoils(ctx context.Context, re
 	// Check quantity limits
 	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.11 (Constraints)
 	// "The quantity of outputs must be in the range of 1 to 1968 (0x07B0) both inclusive."
-	if quantity == 0 || quantity > common.MaxCoilCount {
+	if quantity == 0 || quantity > common.MaxWriteCoilCount {
 		return nil, common.NewModbusError(req.GetPDU().FunctionCode, common.ExceptionInvalidDataValue)
 	}
 
@@ -399,7 +399,7 @@ func (h *serverProtocolHandler) HandleWriteMultipleRegisters(ctx context.Context
 	// Check quantity limits
 	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.12 (Constraints)
 	// "The quantity of registers must be in the range of 1 to 123 (0x7B) both inclusive."
-	if quantity == 0 || quantity > common.MaxRegisterCount {
+	if quantity == 0 || quantity > common.MaxWriteRegisterCount {
 		return nil, common.NewModbusError(req.GetPDU().FunctionCode, common.ExceptionInvalidDataValue)
 	}
 
@@ -481,8 +481,8 @@ func (h *serverProtocolHandler) HandleReadWriteMultipleRegisters(ctx context.Con
 	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.17 (Constraints)
 	// "The quantity of registers to read must be in the range of 1 to 125 (0x7D) both inclusive."
 	// "The quantity of registers to write must be in the range of 1 to 121 (0x79) both inclusive."
-	if readQuantity == 0 || readQuantity > common.MaxRegisterCount ||
-		writeQuantity == 0 || writeQuantity > common.MaxRegisterCount {
+	if readQuantity == 0 || readQuantity > common.MaxReadWriteReadCount ||
+		writeQuantity == 0 || writeQuantity > common.MaxReadWriteWriteCount {
 		return nil, common.NewModbusError(req.GetPDU().FunctionCode, common.ExceptionInvalidDataValue)
 	}
 
