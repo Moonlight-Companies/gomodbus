@@ -300,10 +300,11 @@ func (s *TCPServer) ConnectedClients() []ConnectedClient {
 	clients := make([]ConnectedClient, 0, len(s.clients))
 	for _, c := range s.clients {
 		clients = append(clients, ConnectedClient{
-			RemoteAddr:     c.remoteAddr,
-			ConnectedAt:    c.connectedAt,
-			RxTransactions: c.rxCount.Load(),
-			TxTransactions: c.txCount.Load(),
+			RemoteAddr:        c.remoteAddr,
+			ConnectedAt:       c.connectedAt,
+			RxTransactions:    c.rxCount.Load(),
+			TxTransactions:    c.txCount.Load(),
+			FunctionCodeStats: fcSnapshot(c),
 		})
 	}
 	return clients
@@ -355,8 +356,9 @@ func (s *TCPServer) acceptLoop(ctx context.Context) {
 
 		if s.onClientConnect != nil {
 			s.onClientConnect(ConnectedClient{
-				RemoteAddr:  remoteAddr,
-				ConnectedAt: client.connectedAt,
+				RemoteAddr:        remoteAddr,
+				ConnectedAt:       client.connectedAt,
+				FunctionCodeStats: make(map[common.FunctionCode]uint64),
 			})
 		}
 
@@ -375,10 +377,11 @@ func (s *TCPServer) handleConnection(client *clientConn) {
 	defer func() {
 		if s.onClientDisconnect != nil {
 			s.onClientDisconnect(ConnectedClient{
-				RemoteAddr:     remoteAddr,
-				ConnectedAt:    client.connectedAt,
-				RxTransactions: client.rxCount.Load(),
-				TxTransactions: client.txCount.Load(),
+				RemoteAddr:        remoteAddr,
+				ConnectedAt:       client.connectedAt,
+				RxTransactions:    client.rxCount.Load(),
+				TxTransactions:    client.txCount.Load(),
+				FunctionCodeStats: fcSnapshot(client),
 			})
 		}
 
@@ -461,6 +464,7 @@ func (s *TCPServer) handleConnection(client *clientConn) {
 
 		// Count received transaction
 		client.rxCount.Add(1)
+		client.fcCount[functionCode].Add(1)
 
 		s.logger.Debug(ctx, "Received request from %s: txID=%d, unit=%d, function=%s",
 			remoteAddr, transactionID, unitID, functionCode)
