@@ -33,11 +33,15 @@ type TCPServer struct {
 
 	// Server state
 	running      bool
-	clients      map[string]net.Conn
+	clients      map[string]*clientConn
 	clientsMutex sync.RWMutex
 	mutex        sync.RWMutex
 	logger       common.LoggerInterface
 	stopChan     chan struct{}
+
+	// Client lifecycle callbacks
+	onClientConnect    func(ConnectedClient)
+	onClientDisconnect func(ConnectedClient)
 
 	// Protocol handler for processing requests
 	protocol     *serverProtocolHandler
@@ -67,6 +71,22 @@ func WithServerDataStore(store common.DataStore) TCPServerOption {
 	}
 }
 
+// WithOnClientConnect sets a callback that fires when a new client connects.
+// The callback receives a ConnectedClient snapshot with RemoteAddr and ConnectedAt.
+func WithOnClientConnect(fn func(ConnectedClient)) TCPServerOption {
+	return func(s *TCPServer) {
+		s.onClientConnect = fn
+	}
+}
+
+// WithOnClientDisconnect sets a callback that fires when a client disconnects.
+// The callback receives a ConnectedClient snapshot with final RxTransactions and TxTransactions.
+func WithOnClientDisconnect(fn func(ConnectedClient)) TCPServerOption {
+	return func(s *TCPServer) {
+		s.onClientDisconnect = fn
+	}
+}
+
 // NewTCPServer creates a new Modbus TCP server
 func NewTCPServer(address string, options ...TCPServerOption) *TCPServer {
 	server := &TCPServer{
@@ -75,7 +95,7 @@ func NewTCPServer(address string, options ...TCPServerOption) *TCPServer {
 		handlers:     make(map[common.FunctionCode]common.HandlerFunc),
 		defaultStore: NewMemoryStore(),
 		logger:       logging.NewLogger(),
-		clients:      make(map[string]net.Conn),
+		clients:      make(map[string]*clientConn),
 		protocol:     newServerProtocolHandler(),
 	}
 
@@ -229,10 +249,10 @@ func (s *TCPServer) Stop(ctx context.Context) error {
 
 	// Close all client connections
 	s.clientsMutex.Lock()
-	for _, conn := range s.clients {
-		conn.Close()
+	for _, client := range s.clients {
+		client.conn.Close()
 	}
-	s.clients = make(map[string]net.Conn)
+	s.clients = make(map[string]*clientConn)
 	s.clientsMutex.Unlock()
 
 	s.running = false
@@ -245,6 +265,25 @@ func (s *TCPServer) IsRunning() bool {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 	return s.running
+}
+
+// ConnectedClients returns a snapshot of all currently connected clients
+// with their connection statistics. The returned slice is safe to use
+// without synchronization.
+func (s *TCPServer) ConnectedClients() []ConnectedClient {
+	s.clientsMutex.RLock()
+	defer s.clientsMutex.RUnlock()
+
+	clients := make([]ConnectedClient, 0, len(s.clients))
+	for _, c := range s.clients {
+		clients = append(clients, ConnectedClient{
+			RemoteAddr:     c.remoteAddr,
+			ConnectedAt:    c.connectedAt,
+			RxTransactions: c.rxCount.Load(),
+			TxTransactions: c.txCount.Load(),
+		})
+	}
+	return clients
 }
 
 // acceptLoop accepts incoming connections
@@ -278,25 +317,48 @@ func (s *TCPServer) acceptLoop(ctx context.Context) {
 			}
 		}
 
-		s.logger.Info(ctx, "New client connected: %s", conn.RemoteAddr().String())
+		remoteAddr := conn.RemoteAddr().String()
+		s.logger.Info(ctx, "New client connected: %s", remoteAddr)
 
 		// Add client to tracked connections
+		client := &clientConn{
+			remoteAddr:  remoteAddr,
+			connectedAt: time.Now(),
+			conn:        conn,
+		}
 		s.clientsMutex.Lock()
-		s.clients[conn.RemoteAddr().String()] = conn
+		s.clients[remoteAddr] = client
 		s.clientsMutex.Unlock()
 
+		if s.onClientConnect != nil {
+			s.onClientConnect(ConnectedClient{
+				RemoteAddr:  remoteAddr,
+				ConnectedAt: client.connectedAt,
+			})
+		}
+
 		// Handle the client connection
-		go s.handleConnection(conn)
+		go s.handleConnection(client)
 	}
 }
 
 // handleConnection handles a client connection
 // Implements the Modbus TCP message handling as defined in the specification
 // Ref: Modbus_Messaging_Implementation_Guide_V1_0b.pdf, Section 3 (Message Processing)
-func (s *TCPServer) handleConnection(conn net.Conn) {
+func (s *TCPServer) handleConnection(client *clientConn) {
 	ctx := context.Background()
-	remoteAddr := conn.RemoteAddr().String()
+	conn := client.conn
+	remoteAddr := client.remoteAddr
 	defer func() {
+		if s.onClientDisconnect != nil {
+			s.onClientDisconnect(ConnectedClient{
+				RemoteAddr:     remoteAddr,
+				ConnectedAt:    client.connectedAt,
+				RxTransactions: client.rxCount.Load(),
+				TxTransactions: client.txCount.Load(),
+			})
+		}
+
 		// Remove client from tracked connections
 		s.clientsMutex.Lock()
 		delete(s.clients, remoteAddr)
@@ -374,6 +436,9 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 		request := transport.NewRequest(unitID, functionCode, pduData)
 		request.SetTransactionID(transactionID)
 
+		// Count received transaction
+		client.rxCount.Add(1)
+
 		s.logger.Debug(ctx, "Received request from %s: txID=%d, unit=%d, function=%s",
 			remoteAddr, transactionID, unitID, functionCode)
 
@@ -396,6 +461,7 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 					[]byte{byte(exceptionCode)},
 				)
 				s.sendResponse(conn, exceptionResponse)
+				client.txCount.Add(1)
 			} else {
 				// For other errors, log and disconnect
 				s.logger.Error(ctx, "Error processing request from %s: %v", remoteAddr, err)
@@ -406,6 +472,7 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 
 		// Send the response
 		s.sendResponse(conn, response)
+		client.txCount.Add(1)
 	}
 }
 
