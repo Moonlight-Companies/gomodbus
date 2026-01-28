@@ -2,6 +2,7 @@ package gomodbus
 
 import (
 	"context"
+	"net"
 	"testing"
 	"time"
 
@@ -23,28 +24,31 @@ func TestClientServerIntegration(t *testing.T) {
 
 	// Create the server with a memory store
 	store := server.NewMemoryStore()
-	
+
 	// Pre-load some test data
 	store.SetCoil(common.Address(1000), true)
 	store.SetCoil(common.Address(1001), false)
 	store.SetCoil(common.Address(1002), true)
-	
+
 	store.SetHoldingRegister(common.Address(2000), 0x1234)
 	store.SetHoldingRegister(common.Address(2001), 0x5678)
-	
+
 	store.SetInputRegister(common.Address(3000), 0xABCD)
 	store.SetInputRegister(common.Address(3001), 0xEF01)
-	
-	// Find a free port for the server
-	serverPort, err := common.FindFreePortTCP()
+
+	// Create a listener on a random free port
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("Failed to find free port: %v", err)
+		t.Fatalf("Failed to create listener: %v", err)
 	}
+
+	// Get the actual port
+	serverPort := listener.Addr().(*net.TCPAddr).Port
 
 	// Create the server
 	modbusServer := server.NewTCPServer(
 		"127.0.0.1",
-		server.WithServerPort(serverPort), // Use a dynamically allocated port
+		server.WithServerListener(listener), // Use the pre-created listener
 		server.WithServerLogger(logger),
 		server.WithServerDataStore(store),
 	)
@@ -86,7 +90,7 @@ func TestClientServerIntegration(t *testing.T) {
 	if len(coils) != len(expectedCoils) {
 		t.Fatalf("Expected %d coils, got %d", len(expectedCoils), len(coils))
 	}
-	
+
 	for i, expected := range expectedCoils {
 		if coils[i] != expected {
 			t.Errorf("Coil %d: expected %t, got %t", i, expected, coils[i])
@@ -101,13 +105,13 @@ func TestClientServerIntegration(t *testing.T) {
 
 	expectedHoldingRegisters := []common.RegisterValue{0x1234, 0x5678}
 	if len(holdingRegisters) != len(expectedHoldingRegisters) {
-		t.Fatalf("Expected %d holding registers, got %d", 
+		t.Fatalf("Expected %d holding registers, got %d",
 			len(expectedHoldingRegisters), len(holdingRegisters))
 	}
-	
+
 	for i, expected := range expectedHoldingRegisters {
 		if holdingRegisters[i] != expected {
-			t.Errorf("Holding register %d: expected 0x%04X, got 0x%04X", 
+			t.Errorf("Holding register %d: expected 0x%04X, got 0x%04X",
 				i, expected, holdingRegisters[i])
 		}
 	}
@@ -120,13 +124,13 @@ func TestClientServerIntegration(t *testing.T) {
 
 	expectedInputRegisters := []common.InputRegisterValue{0xABCD, 0xEF01}
 	if len(inputRegisters) != len(expectedInputRegisters) {
-		t.Fatalf("Expected %d input registers, got %d", 
+		t.Fatalf("Expected %d input registers, got %d",
 			len(expectedInputRegisters), len(inputRegisters))
 	}
-	
+
 	for i, expected := range expectedInputRegisters {
 		if inputRegisters[i] != expected {
-			t.Errorf("Input register %d: expected 0x%04X, got 0x%04X", 
+			t.Errorf("Input register %d: expected 0x%04X, got 0x%04X",
 				i, expected, inputRegisters[i])
 		}
 	}
@@ -142,7 +146,7 @@ func TestClientServerIntegration(t *testing.T) {
 	if !ok {
 		t.Fatal("Coil at address 1010 was not written")
 	}
-	
+
 	if coilValue != true {
 		t.Errorf("Expected coil value true, got %t", coilValue)
 	}
@@ -158,7 +162,7 @@ func TestClientServerIntegration(t *testing.T) {
 	if !ok {
 		t.Fatal("Register at address 2010 was not written")
 	}
-	
+
 	if registerValue != 0x4321 {
 		t.Errorf("Expected register value 0x4321, got 0x%04X", registerValue)
 	}
@@ -177,7 +181,7 @@ func TestClientServerIntegration(t *testing.T) {
 		if !ok {
 			t.Fatalf("Coil at address %d was not written", addr)
 		}
-		
+
 		if coilValue != expected {
 			t.Errorf("Coil at address %d: expected %t, got %t", addr, expected, coilValue)
 		}
@@ -197,9 +201,9 @@ func TestClientServerIntegration(t *testing.T) {
 		if !ok {
 			t.Fatalf("Register at address %d was not written", addr)
 		}
-		
+
 		if registerValue != expected {
-			t.Errorf("Register at address %d: expected 0x%04X, got 0x%04X", 
+			t.Errorf("Register at address %d: expected 0x%04X, got 0x%04X",
 				addr, expected, registerValue)
 		}
 	}
@@ -209,7 +213,7 @@ func TestClientServerIntegration(t *testing.T) {
 	readQuantity := common.Quantity(2)
 	writeAddress := common.Address(2030)
 	writeValues := []common.RegisterValue{0xAAAA, 0xBBBB}
-	
+
 	readValues, err := modbusClient.ReadWriteMultipleRegisters(
 		ctx, readAddress, readQuantity, writeAddress, writeValues)
 	if err != nil {
@@ -219,13 +223,13 @@ func TestClientServerIntegration(t *testing.T) {
 	// Verify the read values
 	expectedReadValues := []common.RegisterValue{0x1234, 0x5678}
 	if len(readValues) != len(expectedReadValues) {
-		t.Fatalf("Expected %d read values, got %d", 
+		t.Fatalf("Expected %d read values, got %d",
 			len(expectedReadValues), len(readValues))
 	}
-	
+
 	for i, expected := range expectedReadValues {
 		if readValues[i] != expected {
-			t.Errorf("Read value %d: expected 0x%04X, got 0x%04X", 
+			t.Errorf("Read value %d: expected 0x%04X, got 0x%04X",
 				i, expected, readValues[i])
 		}
 	}
@@ -237,9 +241,9 @@ func TestClientServerIntegration(t *testing.T) {
 		if !ok {
 			t.Fatalf("Register at address %d was not written", addr)
 		}
-		
+
 		if registerValue != expected {
-			t.Errorf("Written register at address %d: expected 0x%04X, got 0x%04X", 
+			t.Errorf("Written register at address %d: expected 0x%04X, got 0x%04X",
 				addr, expected, registerValue)
 		}
 	}

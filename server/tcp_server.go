@@ -71,6 +71,19 @@ func WithServerDataStore(store common.DataStore) TCPServerOption {
 	}
 }
 
+// WithServerListener sets a pre-configured listener for the server.
+// This avoids the TOCTOU race in FindFreePortTCP where the port could be
+// taken between finding it and binding to it.
+func WithServerListener(listener net.Listener) TCPServerOption {
+	return func(s *TCPServer) {
+		s.listener = listener
+		if addr, ok := listener.Addr().(*net.TCPAddr); ok {
+			s.port = addr.Port
+			s.address = addr.IP.String()
+		}
+	}
+}
+
 // WithOnClientConnect sets a callback that fires when a new client connects.
 // The callback receives a ConnectedClient snapshot with RemoteAddr and ConnectedAt.
 func WithOnClientConnect(fn func(ConnectedClient)) TCPServerOption {
@@ -210,19 +223,28 @@ func (s *TCPServer) Start(ctx context.Context) error {
 		return fmt.Errorf("server already running")
 	}
 
-	addr := fmt.Sprintf("%s:%d", s.address, s.port)
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		s.mutex.Unlock()
-		return err
+	// If no listener was provided via WithServerListener, create one
+	if s.listener == nil {
+		addr := fmt.Sprintf("%s:%d", s.address, s.port)
+		listener, err := net.Listen("tcp", addr)
+		if err != nil {
+			s.mutex.Unlock()
+			return err
+		}
+		s.listener = listener
 	}
 
-	s.listener = listener
+	// Update address/port from listener in case it was dynamic (port 0)
+	if addr, ok := s.listener.Addr().(*net.TCPAddr); ok {
+		s.port = addr.Port
+		s.address = addr.IP.String()
+	}
+
 	s.running = true
 	s.stopChan = make(chan struct{})
 	s.mutex.Unlock()
 
-	s.logger.Info(ctx, "Modbus TCP server started on %s", addr)
+	s.logger.Info(ctx, "Modbus TCP server started on %s:%d", s.address, s.port)
 
 	// Start accepting connections
 	go s.acceptLoop(ctx)
@@ -242,9 +264,10 @@ func (s *TCPServer) Stop(ctx context.Context) error {
 	// Signal accept loop to stop
 	close(s.stopChan)
 
-	// Close listener
+	// Close listener and nil it so Start() creates a fresh one
 	if s.listener != nil {
 		s.listener.Close()
+		s.listener = nil
 	}
 
 	// Close all client connections
