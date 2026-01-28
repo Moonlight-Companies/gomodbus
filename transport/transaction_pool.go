@@ -178,6 +178,14 @@ func (tp *TransactionPool) Place(ctx context.Context, request common.Request) (*
 	tp.transactionsMu.Lock()
 	defer tp.transactionsMu.Unlock()
 
+	// Check if the pool was closed between receiving the free ID and acquiring the lock.
+	// If so, the txID is discarded — freeIDs may already be closed so returning it would panic.
+	select {
+	case <-tp.done:
+		return nil, fmt.Errorf("transaction pool is closed")
+	default:
+	}
+
 	// Set the transaction ID on the request
 	request.SetTransactionID(txID)
 
