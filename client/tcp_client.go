@@ -10,7 +10,8 @@ import (
 // TCPClient is a Modbus TCP client
 type TCPClient struct {
 	*BaseClient
-	tcpTransport *transport.TCPTransport
+	tcpTransport    *transport.TCPTransport
+	clientTransport Transport // set when created via NewTCPClientFromTransport
 }
 
 // TCPOption is a function that configures a TCPClient
@@ -27,7 +28,7 @@ func WithTCPLogger(logger common.LoggerInterface) TCPOption {
 func WithTCPUnitID(unitID common.UnitID) TCPOption {
 	return func(c *TCPClient) {
 		c.BaseClient = NewBaseClient(
-			c.tcpTransport,
+			c.BaseClient.transport,
 			WithUnitID(unitID),
 			WithLogger(c.BaseClient.logger),
 			WithProtocol(c.BaseClient.protocol),
@@ -69,6 +70,34 @@ func (c *TCPClient) WithUnitID(unitID common.UnitID) *TCPClient {
 // (Deprecated in favor of WithOptions(WithTCPLogger(logger)))
 func (c *TCPClient) WithLogger(logger common.LoggerInterface) common.Client {
 	return c.WithOptions(WithTCPLogger(logger))
+}
+
+// NewTCPClientFromTransport creates a new Modbus TCP client using a Transport
+// abstraction for connection lifecycle management. The Transport handles
+// connect/disconnect/reconnect; the client just uses it for sending requests.
+func NewTCPClientFromTransport(t Transport, options ...TCPOption) *TCPClient {
+	bridge := newTransportBridge(t)
+	baseClient := NewBaseClient(bridge)
+
+	client := &TCPClient{
+		BaseClient:      baseClient,
+		clientTransport: t,
+	}
+
+	for _, option := range options {
+		option(client)
+	}
+
+	return client
+}
+
+// Close shuts down the client's Transport. This is the primary cleanup method
+// when the client was created via NewTCPClientFromTransport.
+func (c *TCPClient) Close() error {
+	if c.clientTransport != nil {
+		return c.clientTransport.Close()
+	}
+	return nil
 }
 
 // FromReaderWriter creates a new client that reads from the given reader and writes to the given writer

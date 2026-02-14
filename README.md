@@ -290,6 +290,79 @@ func main() {
 }
 ```
 
+### Reconnecting Transport
+
+For long-running applications, use `ReconnectingTransport` to automatically re-establish connections after failures:
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+	"time"
+
+	"github.com/Moonlight-Companies/gomodbus/client"
+	"github.com/Moonlight-Companies/gomodbus/common"
+	"github.com/Moonlight-Companies/gomodbus/logging"
+	"github.com/Moonlight-Companies/gomodbus/transport"
+)
+
+func main() {
+	logger := logging.NewLogger(
+		logging.WithLevel(common.LevelInfo),
+		logging.WithWriter(os.Stdout),
+	)
+
+	// Create a reconnecting transport — never fails, never connects yet.
+	t := client.NewReconnectingTransport("192.168.1.1", logger,
+		[]client.TransportOption{
+			client.WithOnConnect(func() { log.Println("connected") }),
+			client.WithOnDisconnect(func(err error) { log.Println("disconnected:", err) }),
+		},
+		[]transport.TCPTransportOption{
+			transport.WithPort(502),
+			transport.WithTimeoutOption(5 * time.Second),
+		},
+	)
+
+	// Create the client from the transport.
+	modbusClient := client.NewTCPClientFromTransport(t).WithOptions(
+		client.WithTCPUnitID(1),
+		client.WithTCPLogger(logger),
+	)
+	defer modbusClient.Close()
+
+	// No Connect() call needed — the first operation connects lazily.
+	// If the connection drops, the next operation reconnects automatically.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	registers, err := modbusClient.ReadHoldingRegisters(ctx, common.Address(100), common.Quantity(2))
+	if err != nil {
+		log.Fatalf("Failed to read registers: %v", err)
+	}
+	fmt.Printf("Registers: %v\n", registers)
+}
+```
+
+A `DirectTransport` is also available for connect-once semantics where you want the connection established upfront and no automatic reconnection:
+
+```go
+t, err := client.NewDirectTransport(ctx, "192.168.1.1", logger,
+	[]client.TransportOption{client.WithOnConnect(func() { log.Println("connected") })},
+	[]transport.TCPTransportOption{transport.WithPort(502)},
+)
+if err != nil {
+	log.Fatalf("Failed to connect: %v", err)
+}
+// Already connected — err means connection failed.
+modbusClient := client.NewTCPClientFromTransport(t)
+defer modbusClient.Close()
+```
+
 ## Server Usage
 
 ### Creating a Modbus TCP Server
