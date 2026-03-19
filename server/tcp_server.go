@@ -484,7 +484,7 @@ func (s *TCPServer) handleConnection(client *clientConn) {
 				exceptionResponse := transport.NewResponse(
 					transactionID,
 					unitID,
-					functionCode|0x80, // Set the high bit for exception response
+					functionCode|common.FunctionCode(common.ExceptionBit), // Set the high bit for exception response
 					[]byte{byte(exceptionCode)},
 				)
 				s.sendResponse(conn, exceptionResponse)
