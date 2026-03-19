@@ -35,6 +35,8 @@ gomodbus/
 
 All `uint16` wrappers: `Address`, `Quantity`, `TransactionID`, `UnitID`, `FunctionCode`, `ExceptionCode`, `CoilValue`, `RegisterValue`, `InputRegisterValue`, `DiscreteInputValue`, `ExceptionStatus`, `ReadDeviceIDCode`, `DeviceIDObjectCode`
 
+Byte-sized types for Device Identification (FC 0x2B/0x0E): `ConformityLevel` (0x01–0x03 stream, 0x81–0x83 stream+individual), `MoreFollows` (0x00/0xFF), `MEIType`
+
 ## Supported Modbus Functions
 
 | Code | Name | Client Method |
