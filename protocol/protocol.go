@@ -595,8 +595,8 @@ func (h *ProtocolHandler) ParseReadDeviceIdentificationResponse(data []byte) (*c
 	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21 (Response PDU Format)
 	result := &common.DeviceIdentification{
 		ReadDeviceIDCode: common.ReadDeviceIDCode(data[1]), // Echoes the request's ReadDeviceIDCode
-		ConformityLevel:  data[2],                          // Conformity level of the device
-		MoreFollows:      data[3] != 0,                      // Indicates if more objects follow in subsequent requests
+		ConformityLevel:  common.ConformityLevel(data[2]),    // Conformity level of the device
+		MoreFollows:      common.MoreFollows(data[3]),         // Indicates if more objects follow in subsequent requests
 		NextObjectID:     common.DeviceIDObjectCode(data[4]), // Object ID to request next if MoreFollows is true
 		NumberOfObjects:  data[5],                           // Number of objects in this response
 		Objects:          make([]common.DeviceIDObject, 0, data[5]), // The actual objects

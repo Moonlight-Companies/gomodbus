@@ -90,12 +90,12 @@ func TestParseReadDeviceIdentificationResponse(t *testing.T) {
 		t.Errorf("Expected read device ID code %d, got %d", common.ReadDeviceIDBasic, deviceID.ReadDeviceIDCode)
 	}
 
-	if deviceID.ConformityLevel != 0x01 {
-		t.Errorf("Expected conformity level 0x01, got 0x%02X", deviceID.ConformityLevel)
+	if deviceID.ConformityLevel != common.ConformityLevelBasic {
+		t.Errorf("Expected conformity level %s, got %s", common.ConformityLevelBasic, deviceID.ConformityLevel)
 	}
 
-	if deviceID.MoreFollows {
-		t.Error("Expected more follows to be false")
+	if deviceID.MoreFollows != common.MoreFollowsNo {
+		t.Errorf("Expected MoreFollows %s, got %s", common.MoreFollowsNo, deviceID.MoreFollows)
 	}
 
 	if deviceID.NumberOfObjects != 3 {

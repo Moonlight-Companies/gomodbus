@@ -102,8 +102,7 @@ const (
 
 	// Other MEI types from the specification could be added here:
 	// 0x0D - CANopen General Reference Request and Response PDU
-	// 0x0A - CUT File Access
-	// etc.
+	// All other values (0x00-0x0C, 0x0F-0xFF) are reserved.
 )
 
 // Read Device ID codes
@@ -128,6 +127,68 @@ const (
 	ReadDeviceIDExtended = ReadDeviceIDExtendedStream
 	ReadDeviceIDSpecific = ReadDeviceIDSpecificObject
 )
+
+// ConformityLevel indicates the device's identification conformity level
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21, Table 74
+type ConformityLevel byte
+
+// Conformity levels for device identification
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21, Table 74
+const (
+	// Stream access only
+	ConformityLevelBasic    ConformityLevel = 0x01 // Basic identification (stream access only)
+	ConformityLevelRegular  ConformityLevel = 0x02 // Regular identification (stream access only)
+	ConformityLevelExtended ConformityLevel = 0x03 // Extended identification (stream access only)
+
+	// Stream access and individual access
+	ConformityLevelBasicIndividual    ConformityLevel = 0x81 // Basic identification (stream + individual access)
+	ConformityLevelRegularIndividual  ConformityLevel = 0x82 // Regular identification (stream + individual access)
+	ConformityLevelExtendedIndividual ConformityLevel = 0x83 // Extended identification (stream + individual access)
+)
+
+// String returns the string representation of a ConformityLevel
+func (c ConformityLevel) String() string {
+	switch c {
+	case ConformityLevelBasic:
+		return "Basic (stream)"
+	case ConformityLevelRegular:
+		return "Regular (stream)"
+	case ConformityLevelExtended:
+		return "Extended (stream)"
+	case ConformityLevelBasicIndividual:
+		return "Basic (stream+individual)"
+	case ConformityLevelRegularIndividual:
+		return "Regular (stream+individual)"
+	case ConformityLevelExtendedIndividual:
+		return "Extended (stream+individual)"
+	default:
+		return fmt.Sprintf("Unknown(0x%02X)", byte(c))
+	}
+}
+
+// MoreFollows indicates whether additional device identification objects are available
+// in a subsequent request. Used in Read Device Identification (FC 0x2B/0x0E) responses.
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21 (Response PDU)
+type MoreFollows byte
+
+// MoreFollows values for device identification responses
+// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21 (Response PDU)
+const (
+	MoreFollowsNo  MoreFollows = 0x00 // No more objects available
+	MoreFollowsYes MoreFollows = 0xFF // More objects available, request again with NextObjectID
+)
+
+// String returns the string representation of a MoreFollows value
+func (m MoreFollows) String() string {
+	switch m {
+	case MoreFollowsNo:
+		return "No"
+	case MoreFollowsYes:
+		return "Yes"
+	default:
+		return fmt.Sprintf("Unknown(0x%02X)", byte(m))
+	}
+}
 
 // Device identification object IDs
 // Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21, Table 72

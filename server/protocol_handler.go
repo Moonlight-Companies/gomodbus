@@ -576,8 +576,8 @@ func (h *serverProtocolHandler) HandleReadDeviceIdentification(ctx context.Conte
 	// Fixed values for this example server
 	deviceID := &common.DeviceIdentification{
 		ReadDeviceIDCode: readDeviceIDCode,
-		ConformityLevel:  0x01, // Basic identification
-		MoreFollows:      false,
+		ConformityLevel:  common.ConformityLevelBasic, // Basic identification
+		MoreFollows:      common.MoreFollowsNo,
 		NextObjectID:     0x00,
 		NumberOfObjects:  0,
 		Objects:          make([]common.DeviceIDObject, 0),
@@ -667,12 +667,10 @@ func (h *serverProtocolHandler) HandleReadDeviceIdentification(ctx context.Conte
 	responseData := make([]byte, responseSize)
 	responseData[0] = byte(common.MEIReadDeviceID)
 	responseData[1] = byte(deviceID.ReadDeviceIDCode)
-	responseData[2] = deviceID.ConformityLevel
-	if deviceID.MoreFollows {
-		responseData[3] = 1
-	} else {
-		responseData[3] = 0
-	}
+	responseData[2] = byte(deviceID.ConformityLevel)
+	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21 (Response PDU)
+	// MoreFollows: 0x00 = no more objects, 0xFF = more objects available (request again with NextObjectID)
+	responseData[3] = byte(deviceID.MoreFollows)
 	responseData[4] = byte(deviceID.NextObjectID)
 	responseData[5] = deviceID.NumberOfObjects
 

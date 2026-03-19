@@ -11,8 +11,8 @@ type DeviceIDObject struct {
 // Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.21 (Read Device Identification - Response PDU)
 type DeviceIdentification struct {
 	ReadDeviceIDCode ReadDeviceIDCode   // Echoes request - Ref: Section 6.21, Response PDU
-	ConformityLevel  byte               // Conformity level of the device - Ref: Section 6.21, Table 74
-	MoreFollows      bool               // 0x00 = No, 0xFF = Yes - Ref: Section 6.21, Response PDU
+	ConformityLevel  ConformityLevel    // Conformity level of the device - Ref: Section 6.21, Table 74
+	MoreFollows      MoreFollows        // 0x00 = No, 0xFF = Yes - Ref: Section 6.21, Response PDU
 	NextObjectID     DeviceIDObjectCode // Object ID to request next if MoreFollows is true - Ref: Section 6.21, Response PDU
 	NumberOfObjects  byte               // Number of identification objects in this response part - Ref: Section 6.21, Response PDU
 	Objects          []DeviceIDObject   // The list of device identification objects
