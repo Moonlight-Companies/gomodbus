@@ -168,9 +168,9 @@ func (s *MemoryStore) WriteSingleRegister(ctx context.Context, address common.Ad
 // Implements function code 0x0F (Write Multiple Coils) data access
 // Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.11 (Write Multiple Coils)
 func (s *MemoryStore) WriteMultipleCoils(ctx context.Context, address common.Address, values []common.CoilValue) error {
-	// Validate quantity within Modbus limits (1-1968 coils)
+	// Validate quantity within Modbus write limits (1-1968 coils)
 	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.11 (Quantity of Outputs)
-	if len(values) == 0 || len(values) > int(common.MaxCoilCount) {
+	if len(values) == 0 || len(values) > int(common.MaxWriteCoilCount) {
 		return common.ErrInvalidQuantity
 	}
 
@@ -191,7 +191,7 @@ func (s *MemoryStore) WriteMultipleCoils(ctx context.Context, address common.Add
 func (s *MemoryStore) WriteMultipleRegisters(ctx context.Context, address common.Address, values []common.RegisterValue) error {
 	// Validate quantity within Modbus limits (1-123 registers)
 	// Ref: Modbus_Application_Protocol_V1_1b3.pdf, Section 6.12 (Quantity of Registers)
-	if len(values) == 0 || len(values) > int(common.MaxRegisterCount) {
+	if len(values) == 0 || len(values) > int(common.MaxWriteRegisterCount) {
 		return common.ErrInvalidQuantity
 	}
 
